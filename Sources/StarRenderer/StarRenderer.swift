@@ -117,17 +117,17 @@ public final class StarRenderer: NSObject {
     }
 
     /// Linear RGB of the reference rings and their labels.
-    public var referenceRingColor: SIMD3<Float> = SIMD3(0.18, 0.26, 0.4) {
+    public var referenceRingColor: SIMD3<Float> = SIMD3(0.07, 0.2, 0.55) {
         didSet { requestRedraw() }
     }
 
     /// Linear RGB of the rings in the plane through RA 0h and 12h (x-z), dimmer than the equator's.
-    public var meridianXZRingColor: SIMD3<Float> = SIMD3(0.1, 0.22, 0.13) {
+    public var meridianXZRingColor: SIMD3<Float> = SIMD3(0.03, 0.2, 0.05) {
         didSet { requestRedraw() }
     }
 
     /// Linear RGB of the rings in the plane through RA 6h and 18h (y-z), dimmer than the equator's.
-    public var meridianYZRingColor: SIMD3<Float> = SIMD3(0.24, 0.16, 0.07) {
+    public var meridianYZRingColor: SIMD3<Float> = SIMD3(0.3, 0.13, 0.01) {
         didSet { requestRedraw() }
     }
 

@@ -48,6 +48,25 @@ import Testing
         #expect(catalog.stars[1].temperature == Astrophysics.fallbackTemperature)
     }
 
+    @Test func packedBayerAndFlamsteedNamesAreSpacedOut() {
+        #expect(Star.tidyName("20Gam Her") == "20 Gam Her")
+        #expect(Star.tidyName("44Rho1Sgr") == "44 Rho1 Sgr")
+        #expect(Star.tidyName("Kap1Lup") == "Kap1 Lup")
+        #expect(Star.tidyName("14Mu  PsA") == "14 Mu PsA")
+        #expect(Star.tidyName("3Pi 1UMa") == "3 Pi1 UMa")
+        #expect(Star.tidyName("Gam Cen") == "Gam Cen")
+        #expect(Star.tidyName("31 Vul") == "31 Vul")
+        #expect(Star.tidyName("Kaus Australis") == "Kaus Australis")
+        #expect(Star.tidyName("Alya B") == "Alya B")
+        #expect(Star.tidyName("HD 126170") == "HD 126170")
+    }
+
+    @Test func packedNamesCanBeLookedUpEitherWay() throws {
+        let catalog = try StarCatalog.bundled()
+        let star = try #require(catalog.star(named: "20 Gam Her"))
+        #expect(catalog.star(named: "20Gam Her") == star)
+    }
+
     @Test func temperatureFallsBackToSpectralTypeThenColorName() throws {
         let csv = """
         \(Self.header)

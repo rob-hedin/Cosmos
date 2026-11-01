@@ -30,6 +30,17 @@ public struct LabelCandidate: Sendable, Equatable {
 /// Places labels to the right of their stars, most important first, skipping any that would
 /// overlap a placed label or leave the viewport. Pinned labels go first and are never skipped.
 public enum LabelLayout {
+    /// A rectangle in points from the top-left (y down).
+    public struct Rect: Sendable, Equatable {
+        public var origin: SIMD2<Float>
+        public var size: SIMD2<Float>
+
+        public init(origin: SIMD2<Float>, size: SIMD2<Float>) {
+            self.origin = origin
+            self.size = size
+        }
+    }
+
     public struct Placement: Sendable, Equatable {
         public var id: Int
         /// Top-left corner of the label, in points.
@@ -39,17 +50,25 @@ public enum LabelLayout {
     public static func place(
         _ candidates: [LabelCandidate],
         in viewport: SIMD2<Float>,
+        insets: SIMD4<Float> = .zero,
+        avoiding obstacles: [Rect] = [],
         maxCount: Int,
         gap: Float = 3,
         spacing: Float = 2
     ) -> [Placement] {
         let pinned = candidates.filter(\.isPinned)
         let ordered = pinned + candidates.filter { !$0.isPinned }.sorted { ($0.priority, $0.id) < ($1.priority, $1.id) }
+        // Usable area: the viewport less insets (top, left, bottom, right).
+        let low = SIMD2(insets.y, insets.x)
+        let high = viewport - SIMD2(insets.w, insets.z)
         var placed: [(placement: Placement, size: SIMD2<Float>)] = []
+        var count = 0
 
-        func fits(_ origin: SIMD2<Float>, _ size: SIMD2<Float>) -> Bool {
+        func overlaps(_ origin: SIMD2<Float>, _ size: SIMD2<Float>, _ other: SIMD2<Float>, _ otherSize: SIMD2<Float>) -> Bool {
             let far = origin + size
-            return origin.x >= 0 && origin.y >= 0 && far.x <= viewport.x && far.y <= viewport.y
+            let otherFar = other + otherSize
+            return origin.x < otherFar.x + spacing && other.x < far.x + spacing
+                && origin.y < otherFar.y + spacing && other.y < far.y + spacing
         }
 
         for candidate in ordered {
@@ -58,24 +77,24 @@ public enum LabelLayout {
             let right = SIMD2(candidate.anchor.x + candidate.radius + gap, top)
 
             if candidate.isPinned {
+                // Pick the side by horizontal room, then keep the label inside the usable area.
                 let left = SIMD2(candidate.anchor.x - candidate.radius - gap - size.x, top)
-                var origin = fits(right, size) ? right : fits(left, size) ? left : right
-                origin = simd_clamp(origin, .zero, simd_max(viewport - size, .zero))
+                var origin = right.x + size.x <= high.x || left.x < low.x ? right : left
+                origin = simd_clamp(origin, low, simd_max(high - size, low))
                 placed.append((Placement(id: candidate.id, origin: origin), size))
+                count += 1
                 continue
             }
 
-            guard placed.count < maxCount else { break }
+            guard count < maxCount else { break }
             let origin = right
             let far = origin + size
-            guard fits(origin, size) else { continue }
-            let overlaps = placed.contains { other in
-                let otherFar = other.placement.origin + other.size
-                return origin.x < otherFar.x + spacing && other.placement.origin.x < far.x + spacing
-                    && origin.y < otherFar.y + spacing && other.placement.origin.y < far.y + spacing
-            }
-            if !overlaps {
+            guard origin.x >= low.x, origin.y >= low.y, far.x <= high.x, far.y <= high.y else { continue }
+            let blocked = placed.contains { overlaps(origin, size, $0.placement.origin, $0.size) }
+                || obstacles.contains { overlaps(origin, size, $0.origin, $0.size) }
+            if !blocked {
                 placed.append((Placement(id: candidate.id, origin: origin), size))
+                count += 1
             }
         }
         return placed.map(\.placement)

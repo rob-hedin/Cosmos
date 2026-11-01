@@ -54,6 +54,7 @@ public struct OrbitCamera: Sendable, Equatable {
     public func project(
         _ point: SIMD3<Float>, viewProjection: simd_float4x4, viewportSize: SIMD2<Float>
     ) -> SIMD2<Float>? {
+        guard viewportSize.x > 0, viewportSize.y > 0 else { return nil }
         let clip = viewProjection * SIMD4(point, 1)
         guard clip.w > nearPlane, clip.w < farPlane else { return nil }
         let ndc = SIMD2(clip.x, clip.y) / clip.w

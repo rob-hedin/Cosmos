@@ -38,7 +38,10 @@ final class LabelAtlas {
         var placements: [(id: Int, line: CTLine, x: Int, y: Int, width: Int)] = []
         var x = 0
         var y = 0
+        var seenIDs = Set<Int>()
         for label in labels {
+            // Repeated IDs keep the first label, as StarCatalog.star(withID:) keeps the first star.
+            guard seenIDs.insert(label.id).inserted else { continue }
             let line = CTLineCreateWithAttributedString(NSAttributedString(string: label.text, attributes: attributes))
             let labelWidth = Int(ceil(CTLineGetTypographicBounds(line, nil, nil, nil) + 2 * pad))
             guard labelWidth <= width else { continue }

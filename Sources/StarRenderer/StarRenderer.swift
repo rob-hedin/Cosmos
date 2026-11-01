@@ -79,6 +79,12 @@ public final class StarRenderer: NSObject {
         didSet { requestRedraw() }
     }
 
+    /// Regions where labels must not go, in points from the view's top-left, such as an overlaid
+    /// info card. The view's safe area (a title bar or notch) is avoided as well.
+    public var labelExclusions: [LabelLayout.Rect] = [] {
+        didSet { if labelExclusions != oldValue { requestRedraw() } }
+    }
+
     /// Linear RGB of star names.
     public var labelColor: SIMD3<Float> = SIMD3(0.72, 0.77, 0.85) {
         didSet { requestRedraw() }
@@ -129,9 +135,9 @@ public final class StarRenderer: NSObject {
     )
     /// The selected star's name, when it isn't in the atlas (catalog numbers).
     private var selectedLabelAtlas: (id: Star.ID, atlas: LabelAtlas)?
-    /// Label instances when there are too many for setVertexBytes, one per frame in flight, reused.
-    private var labelBuffers: [MTLBuffer?] = [nil, nil, nil]
-    private var labelBufferIndex = 0
+    /// Label instance buffers for when there are too many for setVertexBytes. A buffer goes back
+    /// to the pool only when the GPU has finished the frame that used it.
+    private let labelBufferPool = BufferPool()
     /// Per-frame label scratch storage, kept to avoid reallocating every frame.
     private var labelCandidates: [LabelCandidate] = []
     private var labelOpacity: [Int: Float] = [:]
@@ -152,7 +158,11 @@ public final class StarRenderer: NSObject {
         self.device = device
         self.catalog = catalog
         positions = catalog.stars.map(\.position)
-        namedStarIndices = catalog.stars.indices.filter { !catalog.stars[$0].isCatalogDesignation }
+        // One entry per ID, first wins, matching StarCatalog.star(withID:) for catalogs with repeated IDs.
+        var seenIDs = Set<Star.ID>()
+        namedStarIndices = catalog.stars.indices.filter {
+            !catalog.stars[$0].isCatalogDesignation && seenIDs.insert(catalog.stars[$0].id).inserted
+        }
         commandQueue = queue
 
         guard let library = try? device.makeDefaultLibrary(bundle: .module),
@@ -387,7 +397,7 @@ public final class StarRenderer: NSObject {
         }
 
         if showsLabels {
-            drawLabels(with: encoder, in: view, pixelsPerPoint: pixelsPerPoint)
+            drawLabels(with: encoder, commandBuffer: commandBuffer, in: view, pixelsPerPoint: pixelsPerPoint)
         }
         encoder.endEncoding()
 
@@ -402,7 +412,9 @@ extension StarRenderer {
     /// Parsecs per light year, for apparent magnitude.
     private static let parsecsPerLightYear: Float = 1 / 3.261_56
 
-    private func drawLabels(with encoder: MTLRenderCommandEncoder, in view: MTKView, pixelsPerPoint: Float) {
+    private func drawLabels(
+        with encoder: MTLRenderCommandEncoder, commandBuffer: MTLCommandBuffer, in view: MTKView, pixelsPerPoint: Float
+    ) {
         guard let atlas = labelAtlas else { return }
         let viewport = SIMD2(Float(view.bounds.width), Float(view.bounds.height))
         guard viewport.x > 0, viewport.y > 0 else { return }
@@ -446,7 +458,14 @@ extension StarRenderer {
             labelOpacity[star.id] = min(max((labelMagnitudeLimit - apparent) / 2, 0.45), 1)
         }
 
-        let placements = LabelLayout.place(labelCandidates, in: viewport, maxCount: maxLabels)
+        let insets = view.safeAreaInsets
+        let placements = LabelLayout.place(
+            labelCandidates,
+            in: viewport,
+            insets: SIMD4(Float(insets.top), Float(insets.left), Float(insets.bottom), Float(insets.right)),
+            avoiding: labelExclusions,
+            maxCount: maxLabels
+        )
         labelInstances.removeAll(keepingCapacity: true)
         var separateLabel: (instance: LabelInstance, texture: MTLTexture)?
         for placement in placements {
@@ -471,7 +490,7 @@ extension StarRenderer {
         var drawableSize = SIMD2(Float(view.drawableSize.width), Float(view.drawableSize.height))
         encoder.setRenderPipelineState(labelPipeline)
         encoder.setVertexBytes(&drawableSize, length: MemoryLayout<SIMD2<Float>>.stride, index: 1)
-        if !labelInstances.isEmpty, bindLabelInstances(to: encoder) {
+        if !labelInstances.isEmpty, bindLabelInstances(to: encoder, commandBuffer: commandBuffer) {
             encoder.setFragmentTexture(atlas.texture, index: 0)
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: labelInstances.count)
         }
@@ -484,26 +503,23 @@ extension StarRenderer {
     }
 
     /// Binds `labelInstances` at vertex index 0. setVertexBytes is limited to 4 KB, so larger sets go
-    /// through reused buffers. Returns false, so the caller skips the draw, if a buffer can't be made.
-    ///
-    /// There's one buffer per drawable (MTKView's layer keeps at most three), so the GPU is never
-    /// reading a buffer while the next frame writes it.
-    private func bindLabelInstances(to encoder: MTLRenderCommandEncoder) -> Bool {
+    /// through a pooled buffer. Returns false, so the caller skips the draw, if a buffer can't be made.
+    private func bindLabelInstances(to encoder: MTLRenderCommandEncoder, commandBuffer: MTLCommandBuffer) -> Bool {
         let length = MemoryLayout<LabelInstance>.stride * labelInstances.count
         if length <= 4_096 {
             labelInstances.withUnsafeBytes { encoder.setVertexBytes($0.baseAddress!, length: length, index: 0) }
             return true
         }
-        labelBufferIndex = (labelBufferIndex + 1) % labelBuffers.count
-        if (labelBuffers[labelBufferIndex]?.length ?? 0) < length {
-            let capacity = MemoryLayout<LabelInstance>.stride * max(maxLabels + 1, labelInstances.count)
-            let buffer = device.makeBuffer(length: capacity, options: .storageModeShared)
-            buffer?.label = "Label instances"
-            labelBuffers[labelBufferIndex] = buffer
-        }
-        guard let labelBuffer = labelBuffers[labelBufferIndex], labelBuffer.length >= length else { return false }
-        labelInstances.withUnsafeBytes { labelBuffer.contents().copyMemory(from: $0.baseAddress!, byteCount: length) }
-        encoder.setVertexBuffer(labelBuffer, offset: 0, index: 0)
+        let capacity = MemoryLayout<LabelInstance>.stride * max(maxLabels + 1, labelInstances.count)
+        guard let buffer = labelBufferPool.take(minimumLength: length)
+            ?? device.makeBuffer(length: capacity, options: .storageModeShared)
+        else { return false }
+        buffer.label = "Label instances"
+        labelInstances.withUnsafeBytes { buffer.contents().copyMemory(from: $0.baseAddress!, byteCount: length) }
+        encoder.setVertexBuffer(buffer, offset: 0, index: 0)
+        let pool = labelBufferPool
+        let returned = BufferPool.Handoff(buffer: buffer)
+        commandBuffer.addCompletedHandler { _ in pool.put(returned) }
         return true
     }
 
@@ -531,5 +547,30 @@ extension StarRenderer: MTKViewDelegate {
 
     public func draw(in view: MTKView) {
         render(in: view)
+    }
+}
+
+/// Reusable Metal buffers, safe to return from a command buffer's completion handler.
+private final class BufferPool: @unchecked Sendable {
+    /// Carries a buffer to the completion handler; the GPU is done with it by then, so nothing races.
+    struct Handoff: @unchecked Sendable {
+        let buffer: MTLBuffer
+    }
+
+    private let lock = NSLock()
+    private var buffers: [MTLBuffer] = []
+
+    func take(minimumLength: Int) -> MTLBuffer? {
+        lock.withLock {
+            guard let index = buffers.firstIndex(where: { $0.length >= minimumLength }) else { return nil }
+            return buffers.remove(at: index)
+        }
+    }
+
+    func put(_ handoff: Handoff) {
+        lock.withLock {
+            // A few frames in flight is the most we'll ever need at once.
+            if buffers.count < 4 { buffers.append(handoff.buffer) }
+        }
     }
 }

@@ -110,7 +110,7 @@ public struct StarCatalog: Sendable, Equatable {
 
     /// First star whose name matches, ignoring case and extra spaces.
     public func star(named name: String) -> Star? {
-        let wanted = name.split(separator: " ").joined(separator: " ")
+        let wanted = Star.tidyName(name)
         return stars.first { $0.name.caseInsensitiveCompare(wanted) == .orderedSame }
     }
 

@@ -56,6 +56,25 @@ import Testing
         #expect(origin.y == 0)
     }
 
+    @Test(arguments: [Float(2), 598])
+    func pinnedLabelFlipsLeftInTheRightCorners(y: Float) throws {
+        var pinned = candidate(1, at: SIMD2(790, y), priority: 0)
+        pinned.isPinned = true
+        let origin = try #require(LabelLayout.place([pinned], in: viewport, maxCount: 10).first).origin
+        #expect(origin.x == 723)
+        #expect(origin.y >= 0 && origin.y + size.y <= viewport.y)
+    }
+
+    @Test func labelsStayOutOfInsetsAndObstacles() {
+        let card = LabelLayout.Rect(origin: SIMD2(0, 400), size: SIMD2(300, 200))
+        let placed = LabelLayout.place([
+            candidate(1, at: SIMD2(100, 20), priority: 0),   // under a 28 pt title bar
+            candidate(2, at: SIMD2(100, 450), priority: 1),  // on the card
+            candidate(3, at: SIMD2(100, 200), priority: 2),  // clear
+        ], in: viewport, insets: SIMD4(28, 0, 0, 0), avoiding: [card], maxCount: 10)
+        #expect(placed.map(\.id) == [3])
+    }
+
     @Test func pinnedLabelGoesFirstAndBlocksOthers() {
         var pinned = candidate(1, at: SIMD2(100, 100), priority: 50)
         pinned.isPinned = true

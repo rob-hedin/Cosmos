@@ -18,6 +18,9 @@ public struct StarFieldView: View {
     @State private var renderer: StarRenderer?
     @State private var failure: (any Error)?
     @State private var internalSelection: Star.ID?
+    /// Global frames of the star view and the info card, so labels can keep clear of the card.
+    @State private var starViewFrame: CGRect = .zero
+    @State private var cardFrame: CGRect?
 
     /// Shows the bundled catalog of stars within 200 light years.
     public init(
@@ -76,11 +79,14 @@ public struct StarFieldView: View {
                     selection.wrappedValue = star?.id
                 }
                 .ignoresSafeArea()
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { starViewFrame = $0 }
                 .overlay(alignment: .bottomLeading) {
                     if showsInfoCard, let selectedStar {
                         StarInfoCard(star: selectedStar) {
                             selection.wrappedValue = nil
                         }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { cardFrame = $0 }
+                        .onDisappear { cardFrame = nil }
                         .padding()
                     }
                 }
@@ -97,6 +103,16 @@ public struct StarFieldView: View {
         .onChange(of: sizeMode) { renderer?.sizeMode = sizeMode }
         .onChange(of: showsLabels) { renderer?.showsLabels = showsLabels }
         .onChange(of: selection.wrappedValue) { renderer?.selectedStarID = selection.wrappedValue }
+        .onChange(of: labelExclusions) { renderer?.labelExclusions = labelExclusions }
+    }
+
+    /// The info card's frame in the star view's coordinates.
+    private var labelExclusions: [LabelLayout.Rect] {
+        guard let cardFrame else { return [] }
+        return [LabelLayout.Rect(
+            origin: SIMD2(Float(cardFrame.minX - starViewFrame.minX), Float(cardFrame.minY - starViewFrame.minY)),
+            size: SIMD2(Float(cardFrame.width), Float(cardFrame.height))
+        )]
     }
 
     private func makeRenderer() {
@@ -105,6 +121,7 @@ public struct StarFieldView: View {
             renderer.sizeMode = sizeMode
             renderer.showsLabels = showsLabels
             renderer.selectedStarID = selection.wrappedValue
+            renderer.labelExclusions = labelExclusions
             self.renderer = renderer
             failure = nil
         } catch {

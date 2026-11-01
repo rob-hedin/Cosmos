@@ -124,4 +124,41 @@ import Testing
         expected.fieldOfView = 1
         #expect(camera == expected)
     }
+
+    @Test func centeringShowsTheRequestedSpan() {
+        var camera = CameraFixtures.tilted
+        camera.center(on: SIMD3(3, 4, 5), span: 20)
+        #expect(camera.target == SIMD3(3, 4, 5))
+        #expect(abs(camera.span - 20) < 1e-3)
+        // A point 10 ly to the side of the target, in the view plane, lands on the shorter edge.
+        let edge = camera.target + camera.up * 10
+        let clip = camera.viewProjection(aspectRatio: 1) * SIMD4(edge, 1)
+        #expect(abs(clip.y / clip.w - 1) < 1e-3)
+    }
+
+    @Test func fittingKeepsTheWholeSphereOnScreen() {
+        var camera = CameraFixtures.tilted
+        camera.fit(center: .zero, radius: 30)
+        for direction: SIMD3<Float> in [[1, 0, 0], [0, 1, 0], [0, 0, 1], [-1, 0, 0], [0, -1, 0], [0, 0, -1]] {
+            let clip = camera.viewProjection(aspectRatio: 1) * SIMD4(direction * 30, 1)
+            #expect(clip.w > 0)
+            #expect(abs(clip.x / clip.w) < 1 && abs(clip.y / clip.w) < 1)
+        }
+        // ...but not much more than that.
+        #expect(camera.span < 2 * 30 * 1.6)
+    }
+
+    @Test func fittingASingleStopUsesTheMinimumSpan() {
+        var camera = OrbitCamera()
+        camera.fit(center: SIMD3(1, 1, 1), radius: 0, minimumSpan: 12)
+        #expect(abs(camera.span - 12) < 1e-3)
+    }
+}
+
+private enum CameraFixtures {
+    static var tilted: OrbitCamera {
+        var camera = OrbitCamera()
+        camera.rotate(by: SIMD2(0.4, 0.3))
+        return camera
+    }
 }

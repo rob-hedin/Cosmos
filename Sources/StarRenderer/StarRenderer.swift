@@ -154,6 +154,20 @@ public final class StarRenderer: NSObject {
         didSet { requestRedraw() }
     }
 
+    /// Stars to join with lines, in order. Each stop gets a marker and its name.
+    public var route: StarRoute? {
+        didSet {
+            guard route != oldValue else { return }
+            rebuildRoute()
+            requestRedraw()
+        }
+    }
+
+    /// Color of the route's lines, markers and names.
+    public var routeColor: SIMD3<Float> = SIMD3(1, 0.62, 0.18) {
+        didSet { requestRedraw() }
+    }
+
     public static let pixelFormat: MTLPixelFormat = .bgra8Unorm_srgb
 
     /// True while the view keeps turning after a fling.
@@ -215,6 +229,11 @@ public final class StarRenderer: NSObject {
     /// Keys into `overlayAtlas` only; layout uses its own candidate indices.
     private static let sunLabelID = -1
     private static func ringLabelID(_ index: Int) -> Int { -2 - index }
+    /// The route's points, one per stop, drawn as a line strip.
+    private var routePointBuffer: MTLBuffer?
+    /// Stop names, keyed by stop index.
+    private var routeAtlas: LabelAtlas?
+    private static let routeMarkerDiameter: Float = 14
 
     /// Where a label's text lives and how it's tinted.
     private struct LabelSource {
@@ -459,6 +478,18 @@ public final class StarRenderer: NSObject {
         ringPointBuffer?.label = "Reference rings"
     }
 
+    private func rebuildRoute() {
+        let stops = route?.stops ?? []
+        let points = stops.map { SIMD4($0.position, 1) }
+        routePointBuffer = points.count < 2 ? nil : device.makeBuffer(
+            bytes: points, length: MemoryLayout<SIMD4<Float>>.stride * points.count, options: .storageModeShared
+        )
+        routePointBuffer?.label = "Route"
+        routeAtlas = stops.isEmpty ? nil : LabelAtlas(
+            device: device, labels: stops.enumerated().map { (id: $0.offset, text: $0.element.name) }, width: 1_024
+        )
+    }
+
     private static func makeOverlayAtlas(device: MTLDevice, radii: [Float]) -> LabelAtlas? {
         let rings = radii.enumerated().map { index, radius in
             (id: ringLabelID(index), text: "\(radius.formatted(.number.precision(.fractionLength(0...1)))) ly")
@@ -526,11 +557,24 @@ public final class StarRenderer: NSObject {
         if showsSunMarker {
             drawMarker(at: .zero, diameter: Self.sunMarkerDiameter, color: sunMarkerColor * 0.7)
         }
+        if let route {
+            if let routePointBuffer {
+                var color = SIMD4(routeColor, 1)
+                encoder.setRenderPipelineState(linePipeline)
+                encoder.setVertexBuffer(routePointBuffer, offset: 0, index: 0)
+                encoder.setVertexBytes(&uniforms, length: MemoryLayout<FrameUniforms>.stride, index: 1)
+                encoder.setFragmentBytes(&color, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
+                encoder.drawPrimitives(type: .lineStrip, vertexStart: 0, vertexCount: route.stops.count)
+            }
+            for stop in route.stops {
+                drawMarker(at: stop.position, diameter: Self.routeMarkerDiameter, color: routeColor * 0.8)
+            }
+        }
         if let selectedStarID, let selected = catalog.star(withID: selectedStarID) {
             drawMarker(at: selected.position, diameter: selectionRingDiameter, color: selectionRingColor)
         }
 
-        if showsLabels || showsReferenceRings || showsSunMarker {
+        if showsLabels || showsReferenceRings || showsSunMarker || route?.stops.isEmpty == false {
             drawLabels(with: encoder, commandBuffer: commandBuffer, in: view, pixelsPerPoint: pixelsPerPoint)
         }
         encoder.endEncoding()
@@ -604,10 +648,24 @@ extension StarRenderer {
             }
         }
 
+        // Route stops are named in the route's color, after the Sun's label and before the rings'.
+        var routeStarIDs = Set<Star.ID>()
+        if let route, let routeAtlas {
+            let color = SIMD4(routeColor, 1)
+            for (index, stop) in route.stops.enumerated() {
+                if let id = stop.starID { routeStarIDs.insert(id) }
+                // The selected star and a marked Sun already have labels.
+                if stop.starID == nil ? showsSunMarker : stop.starID == selectedStarID { continue }
+                guard let entry = routeAtlas.entries[index], let anchor = project(stop.position) else { continue }
+                add(entry, from: routeAtlas.texture, color: color, at: anchor,
+                    radius: Self.routeMarkerDiameter / 2, priority: -1_500 + Float(index), triesOtherSides: true)
+            }
+        }
+
         if let atlas {
             for index in namedStarIndices {
                 let star = catalog.stars[index]
-                guard star.id != selectedStarID else { continue }
+                guard star.id != selectedStarID, !routeStarIDs.contains(star.id) else { continue }
                 // Cheap magnitude test first, so faint stars skip projection.
                 let parsecs = max(simd_distance(star.position, eye), 0.001) * Self.parsecsPerLightYear
                 let apparent = Float(star.absoluteMagnitude) + 5 * log10(parsecs) - 5

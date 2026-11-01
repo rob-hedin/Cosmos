@@ -9,11 +9,20 @@ public struct StarFieldBrowser: View {
     @State private var showsRings = true
     @State private var selection: Star.ID?
     @State private var controlsFrame: CGRect?
+    private let focus: StarFieldFocus?
+    private let route: [String]
 
-    public init() {}
+    /// Opens on `focus` if given, otherwise frames `route`; see ``StarFieldView``.
+    public init(focus: StarFieldFocus? = nil, route: [String] = []) {
+        self.focus = focus
+        self.route = route
+    }
 
     public var body: some View {
-        StarFieldView(sizeMode: sizeMode, selection: $selection, showsLabels: showsLabels, showsReferenceRings: showsRings)
+        StarFieldView(
+            sizeMode: sizeMode, selection: $selection, showsLabels: showsLabels, showsReferenceRings: showsRings,
+            focus: focus, route: route
+        )
             .starFieldLabelObstacles([controlsFrame].compactMap { $0 })
             .overlay(alignment: .topTrailing) {
                 HStack(spacing: 10) {

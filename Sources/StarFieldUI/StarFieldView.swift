@@ -9,6 +9,10 @@ import SwiftUI
 /// an info card. Pass a `selection` binding to read or set the selection from your app.
 /// Star names and reference rings at 50, 100 and 200 ly are shown by default; pass
 /// `showsLabels: false` or `showsReferenceRings: false` to hide them. The Sun is always marked.
+///
+/// Pass a `focus` to open centered on a star at a given span in light years, or a `route` of
+/// star names to draw lines between them in order, list each leg's distance in a tile, and
+/// frame all the stops around the first one. A focus, when given, decides the view instead.
 public struct StarFieldView: View {
     private let source: Result<StarCatalog, any Error>
     private let sizeMode: StarSizeMode
@@ -16,6 +20,8 @@ public struct StarFieldView: View {
     private let showsInfoCard: Bool
     private let showsLabels: Bool
     private let showsReferenceRings: Bool
+    private let focus: StarFieldFocus?
+    private let routeNames: [String]
 
     @State private var renderer: StarRenderer?
     @State private var failure: (any Error)?
@@ -23,6 +29,8 @@ public struct StarFieldView: View {
     /// Global frames of the star view and the info card, so labels can keep clear of the card.
     @State private var starViewFrame: CGRect = .zero
     @State private var cardFrame: CGRect?
+    @State private var route: StarRoute?
+    @State private var tileFrame: CGRect?
     @Environment(\.starFieldLabelObstacles) private var labelObstacles
 
     /// Shows the bundled catalog of stars within 200 light years.
@@ -31,7 +39,9 @@ public struct StarFieldView: View {
         selection: Binding<Star.ID?>? = nil,
         showsInfoCard: Bool = true,
         showsLabels: Bool = true,
-        showsReferenceRings: Bool = true
+        showsReferenceRings: Bool = true,
+        focus: StarFieldFocus? = nil,
+        route: [String] = []
     ) {
         self.source = Self.bundledCatalog
         self.sizeMode = sizeMode
@@ -39,6 +49,8 @@ public struct StarFieldView: View {
         self.showsInfoCard = showsInfoCard
         self.showsLabels = showsLabels
         self.showsReferenceRings = showsReferenceRings
+        self.focus = focus
+        self.routeNames = route
     }
 
     public init(
@@ -47,7 +59,9 @@ public struct StarFieldView: View {
         selection: Binding<Star.ID?>? = nil,
         showsInfoCard: Bool = true,
         showsLabels: Bool = true,
-        showsReferenceRings: Bool = true
+        showsReferenceRings: Bool = true,
+        focus: StarFieldFocus? = nil,
+        route: [String] = []
     ) {
         self.source = .success(catalog)
         self.sizeMode = sizeMode
@@ -55,6 +69,8 @@ public struct StarFieldView: View {
         self.showsInfoCard = showsInfoCard
         self.showsLabels = showsLabels
         self.showsReferenceRings = showsReferenceRings
+        self.focus = focus
+        self.routeNames = route
     }
 
     /// Parsed once and shared, so recreating the view doesn't re-read the CSV.
@@ -97,6 +113,16 @@ public struct StarFieldView: View {
                         .padding()
                     }
                 }
+                .overlay(alignment: .topLeading) {
+                    let notFound = notFound
+                    if route?.stops.isEmpty == false || !notFound.isEmpty {
+                        StarRouteTile(route: route ?? StarRoute(stops: []), notFound: notFound)
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { tileFrame = $0 }
+                            .onDisappear { tileFrame = nil }
+                            .padding()
+                            .padding(.top, tileTopOffset)
+                    }
+                }
             } else {
                 Color.black.ignoresSafeArea()
             }
@@ -112,12 +138,62 @@ public struct StarFieldView: View {
         .onChange(of: showsReferenceRings) { renderer?.showsReferenceRings = showsReferenceRings }
         .onChange(of: selection.wrappedValue) { renderer?.selectedStarID = selection.wrappedValue }
         .onChange(of: labelExclusions) { renderer?.labelExclusions = labelExclusions }
+        .onChange(of: routeNames) {
+            let route = resolveRoute()
+            self.route = route
+            if let renderer { aim(renderer, route: route, animated: true) }
+        }
+        .onChange(of: focus) {
+            if let renderer { aim(renderer, route: route, animated: true) }
+        }
+    }
+
+    /// Names that matched nothing: the route's, then the focus star's.
+    private var notFound: [String] {
+        var names = route?.unresolved ?? []
+        if let focus, catalog?.location(named: focus.star) == nil { names.append(focus.star) }
+        return names
+    }
+
+    /// How far to push the route tile down so it clears overlaid controls that share its top
+    /// edge, as on a phone where they don't fit side by side.
+    private var tileTopOffset: CGFloat {
+        guard let tileFrame else { return 0 }
+        let tileLeft = starViewFrame.minX
+        let tileRight = tileFrame.maxX + 8
+        let blocking = labelObstacles.filter { $0.minX < tileRight && $0.maxX > tileLeft && $0.minY < starViewFrame.midY }
+        guard let bottom = blocking.map(\.maxY).max() else { return 0 }
+        // The tile's own padding already gives 16 points from the top.
+        return max(bottom - starViewFrame.minY - 8, 0)
+    }
+
+    private func resolveRoute() -> StarRoute? {
+        guard let catalog, !routeNames.isEmpty else { return nil }
+        return StarRoute(routeNames, in: catalog)
+    }
+
+    /// Points the camera at the focus star or, without one, frames the route around its first stop.
+    private func aim(_ renderer: StarRenderer, route: StarRoute?, animated: Bool) {
+        renderer.route = route
+        var camera = renderer.camera
+        if let focus, let location = renderer.catalog.location(named: focus.star) {
+            camera.center(on: location.position, span: Float(focus.span))
+        } else if let route, let first = route.stops.first {
+            camera.fit(center: first.position, radius: Float(route.reachFromFirstStop))
+        } else {
+            return
+        }
+        if animated {
+            renderer.fly(to: camera.target, distance: camera.distance)
+        } else {
+            renderer.camera = camera
+        }
     }
 
     /// The info card's and any overlaid controls' frames, relative to the star view's safe-area frame
     /// (which is what SwiftUI reports for it, even though the Metal view extends under the title bar).
     private var labelExclusions: [LabelLayout.Rect] {
-        ([cardFrame].compactMap { $0 } + labelObstacles).map { frame in
+        ([cardFrame, tileFrame].compactMap { $0 } + labelObstacles).map { frame in
             LabelLayout.Rect(
                 origin: SIMD2(Float(frame.minX - starViewFrame.minX), Float(frame.minY - starViewFrame.minY)),
                 size: SIMD2(Float(frame.width), Float(frame.height))
@@ -135,6 +211,9 @@ public struct StarFieldView: View {
             renderer.showsSunMarker = true
             renderer.selectedStarID = selection.wrappedValue
             renderer.labelExclusions = labelExclusions
+            let route = resolveRoute()
+            self.route = route
+            aim(renderer, route: route, animated: false)
             self.renderer = renderer
             failure = nil
         } catch {

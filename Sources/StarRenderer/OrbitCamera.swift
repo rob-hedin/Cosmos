@@ -94,6 +94,32 @@ public struct OrbitCamera: Sendable, Equatable {
         distance = min(max(distance * factor, Self.distanceRange.lowerBound), Self.distanceRange.upperBound)
     }
 
+    /// Light years visible across the viewport's shorter side, at the target's distance.
+    public var span: Float {
+        2 * distance * tan(fieldOfView / 2)
+    }
+
+    /// Centers the view on `point`, close enough that `span` light years fit across the
+    /// viewport's shorter side. Keeps the current orientation.
+    public mutating func center(on point: SIMD3<Float>, span: Float) {
+        target = point
+        guard span.isFinite, span > 0 else { return }
+        distance = Self.clamped(span / 2 / tan(fieldOfView / 2))
+    }
+
+    /// Centers the view on `point`, close enough that a sphere of `radius` light years around it
+    /// fits on screen from any angle, with `margin` to spare (1 is a tight fit). A zero radius
+    /// falls back to a span of `minimumSpan` light years.
+    public mutating func fit(center point: SIMD3<Float>, radius: Float, margin: Float = 1.15, minimumSpan: Float = 10) {
+        guard radius.isFinite, radius > 0 else { return center(on: point, span: minimumSpan) }
+        target = point
+        distance = Self.clamped(max(radius * margin / sin(fieldOfView / 2), minimumSpan / 2 / tan(fieldOfView / 2)))
+    }
+
+    private static func clamped(_ distance: Float) -> Float {
+        min(max(distance, distanceRange.lowerBound), distanceRange.upperBound)
+    }
+
     /// Slides the target so the scene follows a drag of `points` (screen convention, +y downward)
     /// in a viewport whose shorter side is `viewportShortSide` points.
     public mutating func pan(byPoints points: SIMD2<Float>, viewportShortSide: Float) {

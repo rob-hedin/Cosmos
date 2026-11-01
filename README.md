@@ -56,6 +56,23 @@ The controls at the top right turn star names and the reference rings on and off
 
 To show stars in your own app, use `StarFieldScene()` as a scene, place `StarFieldView()` in your UI, or call `StarFieldWindow.open()` from AppKit.
 
+### Focus and routes
+
+To open centered on a star, pass a focus with the span, in light years, across the view's shorter side. To show a route, pass star names in order: the stops are joined with lines, a tile lists each leg's distance and the total, and the view centers on the first stop and zooms to fit them all. Names are as shown on the info card, plus "Sun" or "Sol", a few common aliases such as "Alpha Centauri" and "Proxima", and catalog numbers such as "HIP 71683" or "HD 128620". Names that match nothing are listed in the tile. A focus, when given, decides the view.
+
+```swift
+StarFieldScene(focus: StarFieldFocus(star: "Vega", span: 20))
+StarFieldView(route: ["Sol", "Alpha Centauri", "Sirius"])
+StarFieldWindow.open(route: ["Sun", "Barnard's Star", "Wolf 359"])
+```
+
+The demo takes the same options:
+
+```sh
+swift run CosmosDemo --star Vega --span 20
+swift run CosmosDemo --route "Sol, Alpha Centauri, Sirius"
+```
+
 ## Data
 
 `Sources/StarCatalog/Resources/stars.csv` is derived from the HYG database (stars within 200 ly). Temperatures come from B-V via the Ballesteros formula, falling back to spectral class and then the catalog color name. Radii are estimates from R ∝ √L / T².

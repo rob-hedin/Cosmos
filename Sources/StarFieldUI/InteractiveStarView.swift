@@ -330,9 +330,11 @@ final class InteractiveStarView: MTKView, UIGestureRecognizerDelegate {
 
     @objc private func doubleTap(_ recognizer: UITapGestureRecognizer) {
         guard let renderer else { return }
-        if let hit = star(at: recognizer.location(in: self)) {
-            // Select it too, as a double-click does on the Mac (its first click selects).
-            onSelect?(hit)
+        let hit = star(at: recognizer.location(in: self))
+        // Select (or, on empty space, deselect) too, as a double-click does on the Mac, where the
+        // first click selects. The single-tap recognizer waits for this one to fail, so it won't.
+        onSelect?(hit)
+        if let hit {
             renderer.fly(to: hit.position, distance: min(renderer.camera.distance, flyToDistance))
         } else {
             renderer.camera.reset()

@@ -591,7 +591,8 @@ extension StarRenderer {
                 add(entry, from: overlay.texture, color: SIMD4(sunMarkerColor, 1), at: anchor,
                     radius: Self.sunMarkerDiameter / 2, priority: -2_000, triesOtherSides: true)
             }
-            if showsReferenceRings {
+            // Only the equator's rings carry distance labels, so none when they aren't drawn.
+            if showsReferenceRings, referenceRingPlanes.contains(.equator) {
                 let color = SIMD4(simd_min(referenceRingColor * 2.2, SIMD3(repeating: 1)), 1)
                 for (index, radius) in referenceRingRadii.enumerated() {
                     guard let entry = overlay.entries[Self.ringLabelID(index)],

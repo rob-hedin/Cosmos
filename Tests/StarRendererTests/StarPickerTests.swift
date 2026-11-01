@@ -75,4 +75,40 @@ import Testing
         #expect(forward != nil)
         #expect(forward == backward)
     }
+
+    @Test func aBigDiscWinsOverAFaintStarInFront() throws {
+        let camera = OrbitCamera()
+        // A faint star much closer to the camera, a few points from a bright star's center on screen.
+        let bright = SIMD3<Float>.zero
+        let brightOnScreen = try #require(camera.project(bright, viewportSize: viewport))
+        let faint = camera.position * 0.05 + camera.right * 4
+        let faintOnScreen = try #require(camera.project(faint, viewportSize: viewport))
+        let tap = brightOnScreen + (faintOnScreen - brightOnScreen) / 2
+        let positions = [faint, bright]
+        #expect(StarPicker.nearest(to: tap, in: positions, camera: camera, viewportSize: viewport) == 0)
+        // With the bright star's 10 pt disc under the tap, it wins.
+        let withSizes = StarPicker.nearest(to: tap, in: positions, radii: [0.75, 10], camera: camera, viewportSize: viewport)
+        #expect(withSizes == 1)
+    }
+
+    @Test func discRadiusExtendsTheReach() throws {
+        let camera = OrbitCamera()
+        let onScreen = try #require(camera.project(.zero, viewportSize: viewport))
+        let tap = onScreen + SIMD2(25, 0)
+        #expect(StarPicker.nearest(to: tap, in: [.zero], camera: camera, viewportSize: viewport) == nil)
+        #expect(StarPicker.nearest(to: tap, in: [.zero], radii: [10], camera: camera, viewportSize: viewport) == 0)
+    }
+
+    @Test func theBiggerDiscWinsWhenBothCoverTheTap() throws {
+        let camera = OrbitCamera()
+        let bright = SIMD3<Float>.zero
+        let tap = try #require(camera.project(bright, viewportSize: viewport))
+        // A smaller disc, nearer the camera, also covering the tap point.
+        let small = camera.position * 0.05 + camera.right * 1
+        #expect(StarPicker.nearest(to: tap, in: [small, bright], radii: [3, 10], camera: camera, viewportSize: viewport) == 1)
+        #expect(StarPicker.nearest(to: tap, in: [bright, small], radii: [10, 3], camera: camera, viewportSize: viewport) == 0)
+        // With equal discs, the nearer star wins.
+        #expect(StarPicker.nearest(to: tap, in: [small, bright], radii: [10, 10], camera: camera, viewportSize: viewport) == 0)
+        #expect(StarPicker.nearest(to: tap, in: [bright, small], radii: [10, 10], camera: camera, viewportSize: viewport) == 1)
+    }
 }

@@ -237,11 +237,13 @@ public final class StarRenderer: NSObject {
 
     // MARK: Picking
 
-    /// The star under a point in the view (points from the top-left, y down), within `tolerance` points.
+    /// The star under a point in the view (points from the top-left, y down), within `tolerance`
+    /// points of its drawn disc. A point on a big, bright star picks it over faint ones nearby.
     public func star(at point: CGPoint, viewSize: CGSize, tolerance: Float = 20) -> Star? {
         StarPicker.nearest(
             to: SIMD2(Float(point.x), Float(point.y)),
             in: positions,
+            radii: positions.indices.map { drawnDiameter(ofStarAt: $0) / 2 },
             camera: camera,
             viewportSize: SIMD2(Float(viewSize.width), Float(viewSize.height)),
             maxDistance: tolerance

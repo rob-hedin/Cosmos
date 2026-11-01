@@ -8,7 +8,7 @@ A Swift and Metal framework for macOS 27 and iOS/iPadOS 27 that shows the 11,975
 | --- | --- | --- |
 | `StarCatalog` | Done | Loads the bundled CSV; computes 3D positions (light years, Sun at origin, equatorial frame), luminosity, temperature, estimated radius, and blackbody color; size normalization for both size modes |
 | `StarRenderer` | First light | Metal renderer: one instanced draw of all stars with additive glow, Sun marker, `OrbitCamera` with rotate, zoom, pan, roll, reset and fling; picking, selection ring, fly-to, decluttered star names |
-| `StarFieldUI` | First light | SwiftUI `StarFieldView`, `StarFieldScene` (macOS and iOS), `StarFieldWindow.open()` (macOS), mouse and trackpad input, selection binding, `StarInfoCard`, `StarFieldBrowser` with name and size controls. Touch input to come |
+| `StarFieldUI` | First light | SwiftUI `StarFieldView`, `StarFieldScene` (macOS and iOS), `StarFieldWindow.open()` (macOS), mouse, trackpad and touch input, selection binding, `StarInfoCard`, `StarFieldBrowser` with name and size controls. |
 
 ## Usage
 
@@ -37,6 +37,20 @@ Opens a macOS window with every star, viewed from outside the 200 ly sphere with
 | Select a star | Click it (shows a ring and an info card; click empty space to deselect) |
 | Fly to a star | Double-click it, then rotate around it |
 | Reset | Double-click empty space |
+
+On iPhone and iPad:
+
+| Action | Input |
+| --- | --- |
+| Rotate | One-finger drag (release while moving to fling) |
+| Zoom | Pinch, or scroll with an iPad trackpad or mouse |
+| Pan | Two-finger drag |
+| Roll | Two-finger rotate |
+| Select a star | Tap it (tap empty space to deselect) |
+| Fly to a star | Double-tap it |
+| Reset | Double-tap empty space |
+
+`CosmosDemo` runs on macOS; on iOS, use `StarFieldScene()` or `StarFieldView()` in an app target.
 
 The controls at the top right turn star names on and off and switch star size between luminosity and estimated radius. Names appear for named stars bright enough to see with the naked eye from the camera's position, brightest first, without overlapping; the selected star is always labeled.
 

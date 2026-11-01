@@ -7,8 +7,8 @@ A Swift and Metal framework for macOS 27 and iOS/iPadOS 27 that shows the 11,975
 | Module | Status | What it does |
 | --- | --- | --- |
 | `StarCatalog` | Done | Loads the bundled CSV; computes 3D positions (light years, Sun at origin, equatorial frame), luminosity, temperature, estimated radius, and blackbody color; size normalization for both size modes |
-| `StarRenderer` | Planned | Metal renderer: one instanced draw of all stars, orbit camera, name labels |
-| `StarFieldUI` | Planned | SwiftUI `StarFieldView`, macOS window and iOS `Scene` helpers, input and selection |
+| `StarRenderer` | First light | Metal renderer: one instanced draw of all stars with additive glow, Sun marker, `OrbitCamera` math. Input and labels to come |
+| `StarFieldUI` | First light | SwiftUI `StarFieldView`, `StarFieldScene` (macOS and iOS), `StarFieldWindow.open()` (macOS). Input and selection to come |
 
 ## Usage
 
@@ -19,6 +19,16 @@ let catalog = try StarCatalog.bundled()
 let sirius = catalog.star(named: "Sirius")
 let sizes = catalog.normalizedSizes(for: .luminosity) // or .estimatedRadius
 ```
+
+## Demo
+
+```sh
+swift run CosmosDemo
+```
+
+Opens a macOS window with every star, viewed from outside the 200 ly sphere with north up.
+
+To show stars in your own app, use `StarFieldScene()` as a scene, place `StarFieldView()` in your UI, or call `StarFieldWindow.open()` from AppKit.
 
 ## Data
 

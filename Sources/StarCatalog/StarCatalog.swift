@@ -15,7 +15,7 @@ public enum StarCatalogError: Error, Equatable {
 }
 
 /// The full set of stars, loaded from the bundled CSV or any CSV with the same columns.
-public struct StarCatalog: Sendable {
+public struct StarCatalog: Sendable, Equatable {
     public let stars: [Star]
 
     public init(stars: [Star]) {

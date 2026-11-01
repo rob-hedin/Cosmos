@@ -75,6 +75,15 @@ import Testing
         #expect(placed.map(\.id) == [3])
     }
 
+    @Test func pinnedLabelMovesClearOfAnObstacle() throws {
+        // The star sits just above the card's top edge, so the side positions overlap the card.
+        let card = LabelLayout.Rect(origin: SIMD2(0, 400), size: SIMD2(300, 200))
+        var pinned = candidate(1, at: SIMD2(100, 402), priority: 0)
+        pinned.isPinned = true
+        let origin = try #require(LabelLayout.place([pinned], in: viewport, avoiding: [card], maxCount: 10).first).origin
+        #expect(origin.y + size.y <= 400 - 2)
+    }
+
     @Test func pinnedLabelGoesFirstAndBlocksOthers() {
         var pinned = candidate(1, at: SIMD2(100, 100), priority: 50)
         pinned.isPinned = true

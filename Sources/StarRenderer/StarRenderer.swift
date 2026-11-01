@@ -161,7 +161,8 @@ public final class StarRenderer: NSObject {
         // One entry per ID, first wins, matching StarCatalog.star(withID:) for catalogs with repeated IDs.
         var seenIDs = Set<Star.ID>()
         namedStarIndices = catalog.stars.indices.filter {
-            !catalog.stars[$0].isCatalogDesignation && seenIDs.insert(catalog.stars[$0].id).inserted
+            let isFirst = seenIDs.insert(catalog.stars[$0].id).inserted
+            return isFirst && !catalog.stars[$0].isCatalogDesignation
         }
         commandQueue = queue
 
@@ -569,8 +570,15 @@ private final class BufferPool: @unchecked Sendable {
 
     func put(_ handoff: Handoff) {
         lock.withLock {
-            // A few frames in flight is the most we'll ever need at once.
-            if buffers.count < 4 { buffers.append(handoff.buffer) }
+            // A few frames in flight is the most we'll ever need at once. When full, a larger
+            // buffer replaces the smallest, so the pool keeps up after the label limit grows.
+            if buffers.count >= 4 {
+                guard let smallest = buffers.indices.min(by: { buffers[$0].length < buffers[$1].length }),
+                      buffers[smallest].length < handoff.buffer.length
+                else { return }
+                buffers.remove(at: smallest)
+            }
+            buffers.append(handoff.buffer)
         }
     }
 }

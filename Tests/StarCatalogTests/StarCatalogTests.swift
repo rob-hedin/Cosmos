@@ -65,6 +65,9 @@ import Testing
         let catalog = try StarCatalog.bundled()
         let star = try #require(catalog.star(named: "20 Gam Her"))
         #expect(catalog.star(named: "20Gam Her") == star)
+        #expect(catalog.star(named: "20gam her") == star)
+        #expect(catalog.star(named: "44rho1sgr") == catalog.star(named: "44 Rho1 Sgr"))
+        #expect(catalog.star(named: "kap1lup") == catalog.star(named: "Kap1 Lup"))
     }
 
     @Test func temperatureFallsBackToSpectralTypeThenColorName() throws {

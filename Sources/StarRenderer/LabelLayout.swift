@@ -77,9 +77,18 @@ public enum LabelLayout {
             let right = SIMD2(candidate.anchor.x + candidate.radius + gap, top)
 
             if candidate.isPinned {
-                // Pick the side by horizontal room, then keep the label inside the usable area.
+                // Try right, left, above and below the star for a spot that's on screen and clear of
+                // obstacles. Failing that, pick a side by horizontal room and clamp onto the screen.
                 let left = SIMD2(candidate.anchor.x - candidate.radius - gap - size.x, top)
-                var origin = right.x + size.x <= high.x || left.x < low.x ? right : left
+                let centerX = candidate.anchor.x - size.x / 2
+                let above = SIMD2(centerX, candidate.anchor.y - candidate.radius - gap - size.y)
+                let below = SIMD2(centerX, candidate.anchor.y + candidate.radius + gap)
+                let clear = [right, left, above, below].first { origin in
+                    let far = origin + size
+                    return origin.x >= low.x && origin.y >= low.y && far.x <= high.x && far.y <= high.y
+                        && !obstacles.contains { overlaps(origin, size, $0.origin, $0.size) }
+                }
+                var origin = clear ?? (right.x + size.x <= high.x || left.x < low.x ? right : left)
                 origin = simd_clamp(origin, low, simd_max(high - size, low))
                 placed.append((Placement(id: candidate.id, origin: origin), size))
                 count += 1

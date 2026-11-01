@@ -57,10 +57,10 @@ public struct Star: Sendable, Hashable, Identifiable {
         return [number, greek, constellation].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
     }
 
-    // Built from a string so it stays a plain, Sendable regex on every platform.
+    // Case-insensitive so lookups like "20gam her" tidy the same way as the catalog's "20Gam Her".
     nonisolated(unsafe) private static let bayerFlamsteed = try! Regex(
-        #"(\d+)? ?(Alp|Bet|Gam|Del|Eps|Zet|Eta|The|Iot|Kap|Lam|Mu|Nu|Xi|Omi|Pi|Rho|Sig|Tau|Ups|Phi|Chi|Psi|Ome) ?(\d)? ?([A-Z][A-Za-z]{2})"#
-    )
+        #"(\d+)? ?(Alp|Bet|Gam|Del|Eps|Zet|Eta|The|Iot|Kap|Lam|Mu|Nu|Xi|Omi|Pi|Rho|Sig|Tau|Ups|Phi|Chi|Psi|Ome) ?(\d)? ?([A-Z][A-Z]{2})"#
+    ).ignoresCase()
 
     public init(
         id: Int,

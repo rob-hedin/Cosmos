@@ -1,4 +1,5 @@
 import Metal
+import simd
 import Testing
 @testable import StarRenderer
 
@@ -53,7 +54,8 @@ import Testing
         pinned.isPinned = true
         let origin = try #require(LabelLayout.place([pinned], in: viewport, maxCount: 10).first).origin
         #expect(origin.x >= 0 && origin.x + 780 <= viewport.x)
-        #expect(origin.y == 0)
+        // Too wide for either side, so it goes just below the star rather than over it.
+        #expect(origin.y == 9)
     }
 
     @Test(arguments: [Float(2), 598])
@@ -82,6 +84,44 @@ import Testing
         pinned.isPinned = true
         let origin = try #require(LabelLayout.place([pinned], in: viewport, avoiding: [card], maxCount: 10).first).origin
         #expect(origin.y + size.y <= 400 - 2)
+    }
+
+    @Test func pinnedLabelUnderAnObstacleMovesOutside() throws {
+        let card = LabelLayout.Rect(origin: SIMD2(0, 400), size: SIMD2(300, 200))
+        var pinned = candidate(1, at: SIMD2(150, 560), priority: 0)
+        pinned.isPinned = true
+        let origin = try #require(LabelLayout.place([pinned], in: viewport, avoiding: [card], maxCount: 10).first).origin
+        // Just right of the card, level with the star.
+        #expect(origin == SIMD2(303, 552))
+    }
+
+    @Test func pinnedLabelStaysNearItsStarBesideAnUnrelatedObstacle() throws {
+        // A star in the top-right corner, beside the window's controls; the card is far away.
+        let viewport = SIMD2<Float>(1000, 750)
+        let card = LabelLayout.Rect(origin: SIMD2(16, 519), size: SIMD2(300, 215))
+        let controls = LabelLayout.Rect(origin: SIMD2(686, 48), size: SIMD2(298, 40))
+        var pinned = candidate(1, at: SIMD2(992, 44), priority: 0)
+        pinned.isPinned = true
+        let origin = try #require(
+            LabelLayout.place([pinned], in: viewport, insets: SIMD4(28, 0, 0, 0), avoiding: [card, controls], maxCount: 10).first
+        ).origin
+        let nearest = simd_clamp(SIMD2<Float>(992, 44), origin, origin + size)
+        #expect(simd_distance(nearest, SIMD2(992, 44)) < 60)
+        #expect(origin.y >= 28)
+    }
+
+    @Test func pinnedLabelWithASelectionRingAvoidsTheControls() throws {
+        // As in the demo: the selection ring's radius is 14 pt.
+        let viewport = SIMD2<Float>(1000, 750)
+        let controls = LabelLayout.Rect(origin: SIMD2(686, 48), size: SIMD2(298, 40))
+        let pinned = LabelCandidate(id: 1, anchor: SIMD2(992, 43), radius: 14, size: size, priority: 0, isPinned: true)
+        let origin = try #require(
+            LabelLayout.place([pinned], in: viewport, insets: SIMD4(28, 0, 0, 0), avoiding: [controls], maxCount: 10).first
+        ).origin
+        let far = origin + size
+        let overlapsControls = origin.x < 984 && 686 < far.x && origin.y < 88 && 48 < far.y
+        #expect(!overlapsControls)
+        #expect(origin.y >= 28)
     }
 
     @Test func pinnedLabelGoesFirstAndBlocksOthers() {

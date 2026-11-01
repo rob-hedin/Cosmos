@@ -77,19 +77,46 @@ public enum LabelLayout {
             let right = SIMD2(candidate.anchor.x + candidate.radius + gap, top)
 
             if candidate.isPinned {
-                // Try right, left, above and below the star for a spot that's on screen and clear of
-                // obstacles. Failing that, pick a side by horizontal room and clamp onto the screen.
+                // First choice: right, left, above or below the star, if on screen and clear of obstacles.
+                // Next: the nearest clear spot among those and the spots beside each obstacle, pulled onto
+                // the screen and not covering the star. Last resort: a side by horizontal room, clamped.
                 let left = SIMD2(candidate.anchor.x - candidate.radius - gap - size.x, top)
                 let centerX = candidate.anchor.x - size.x / 2
                 let above = SIMD2(centerX, candidate.anchor.y - candidate.radius - gap - size.y)
                 let below = SIMD2(centerX, candidate.anchor.y + candidate.radius + gap)
-                let clear = [right, left, above, below].first { origin in
+                let besideObstacles = obstacles.flatMap { box -> [SIMD2<Float>] in
+                    let far = box.origin + box.size
+                    return [
+                        SIMD2(far.x + gap, top),
+                        SIMD2(centerX, box.origin.y - gap - size.y),
+                        SIMD2(box.origin.x - gap - size.x, top),
+                        SIMD2(centerX, far.y + gap),
+                    ]
+                }
+                let maxOrigin = simd_max(high - size, low)
+                func isClear(_ origin: SIMD2<Float>) -> Bool {
                     let far = origin + size
                     return origin.x >= low.x && origin.y >= low.y && far.x <= high.x && far.y <= high.y
                         && !obstacles.contains { overlaps(origin, size, $0.origin, $0.size) }
                 }
-                var origin = clear ?? (right.x + size.x <= high.x || left.x < low.x ? right : left)
-                origin = simd_clamp(origin, low, simd_max(high - size, low))
+                func coversStar(_ origin: SIMD2<Float>) -> Bool {
+                    let far = origin + size
+                    let r = candidate.radius
+                    return origin.x < candidate.anchor.x + r && candidate.anchor.x - r < far.x
+                        && origin.y < candidate.anchor.y + r && candidate.anchor.y - r < far.y
+                }
+                func distanceToStar(_ origin: SIMD2<Float>) -> Float {
+                    let nearest = simd_clamp(candidate.anchor, origin, origin + size)
+                    return simd_distance(nearest, candidate.anchor)
+                }
+                let sides = [right, left, above, below]
+                let nearestClear = (sides + besideObstacles)
+                    .map { simd_clamp($0, low, maxOrigin) }
+                    .filter { isClear($0) && !coversStar($0) }
+                    .min { distanceToStar($0) < distanceToStar($1) }
+                var origin = sides.first(where: isClear) ?? nearestClear
+                    ?? (right.x + size.x <= high.x || left.x < low.x ? right : left)
+                origin = simd_clamp(origin, low, maxOrigin)
                 placed.append((Placement(id: candidate.id, origin: origin), size))
                 count += 1
                 continue

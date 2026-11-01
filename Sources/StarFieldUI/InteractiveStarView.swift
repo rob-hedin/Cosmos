@@ -17,7 +17,12 @@ final class InteractiveStarView: MTKView {
     /// Rotation per point dragged, in radians.
     var radiansPerPoint: Float = 0.006
 
-    private var lastDrag: (delta: SIMD2<Float>, time: TimeInterval)?
+    /// Recent rotation drags, for estimating release speed. Cleared on press and when panning.
+    private var rotationSamples: [(delta: SIMD2<Float>, time: TimeInterval, interval: TimeInterval)] = []
+    private var lastEventTime: TimeInterval = 0
+
+    /// How far back release speed is averaged, in seconds.
+    private let velocityWindow: TimeInterval = 0.08
 
     private var renderer: StarRenderer? {
         delegate as? StarRenderer
@@ -30,8 +35,7 @@ final class InteractiveStarView: MTKView {
     // MARK: Rotate and pan
 
     override func mouseDown(with event: NSEvent) {
-        renderer?.stopSpinning()
-        lastDrag = nil
+        beginDrag(at: event)
         if event.clickCount == 2 {
             renderer?.camera.reset()
         }
@@ -39,24 +43,39 @@ final class InteractiveStarView: MTKView {
 
     override func mouseDragged(with event: NSEvent) {
         let delta = SIMD2(Float(event.deltaX), Float(event.deltaY))
+        let interval = event.timestamp - lastEventTime
+        lastEventTime = event.timestamp
         if event.modifierFlags.contains(.shift) {
+            rotationSamples.removeAll()
             pan(by: delta)
         } else {
             renderer?.camera.rotate(by: delta * radiansPerPoint)
-            lastDrag = (delta, event.timestamp)
+            rotationSamples.append((delta, event.timestamp, interval))
+            rotationSamples.removeAll { event.timestamp - $0.time > velocityWindow }
         }
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { lastDrag = nil }
-        // Fling only if the pointer was still moving when released.
-        guard let lastDrag, event.timestamp - lastDrag.time < 0.05 else { return }
-        let framesPerSecond = Float(window?.screen?.maximumFramesPerSecond ?? 60)
-        renderer?.fling(angularVelocity: lastDrag.delta * radiansPerPoint * framesPerSecond)
+        defer { rotationSamples.removeAll() }
+        // Fling only if the last move was a rotation and the pointer was still moving when released.
+        guard let last = rotationSamples.last, event.timestamp - last.time < 0.05 else { return }
+        let distance = rotationSamples.reduce(SIMD2<Float>.zero) { $0 + $1.delta }
+        let duration = max(rotationSamples.reduce(0.0) { $0 + $1.interval }, 1.0 / 240)
+        renderer?.fling(angularVelocity: distance / Float(duration) * radiansPerPoint)
     }
 
     override func rightMouseDown(with event: NSEvent) {
+        beginDrag(at: event)
+    }
+
+    override func otherMouseDown(with event: NSEvent) {
+        beginDrag(at: event)
+    }
+
+    private func beginDrag(at event: NSEvent) {
         renderer?.stopSpinning()
+        rotationSamples.removeAll()
+        lastEventTime = event.timestamp
     }
 
     override func rightMouseDragged(with event: NSEvent) {

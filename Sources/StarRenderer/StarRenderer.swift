@@ -117,6 +117,8 @@ public final class StarRenderer: NSObject {
     }
 
     public func requestRedraw() {
+        // While spinning the view draws every frame on its own timer.
+        guard view?.isPaused != false else { return }
         #if os(macOS)
         view?.needsDisplay = true
         #else
@@ -129,13 +131,19 @@ public final class StarRenderer: NSObject {
     public func fling(angularVelocity: SIMD2<Float>) {
         spinVelocity = angularVelocity
         lastSpinTime = nil
-        view?.isPaused = !isSpinning
+        guard isSpinning else { return stopSpinning() }
+        // Timed drawing: both flags off, per MTKView's documented modes.
+        view?.enableSetNeedsDisplay = false
+        view?.isPaused = false
     }
 
     public func stopSpinning() {
         spinVelocity = .zero
         lastSpinTime = nil
-        view?.isPaused = true
+        guard let view, !view.isPaused else { return }
+        view.isPaused = true
+        view.enableSetNeedsDisplay = true
+        requestRedraw()
     }
 
     private func advanceSpin() {

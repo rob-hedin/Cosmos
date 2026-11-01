@@ -122,7 +122,7 @@ public final class StarRenderer: NSObject {
     }
 
     /// Linear RGB of the rings in the plane through RA 0h and 12h (x-z), dimmer than the equator's.
-    public var meridianXZRingColor: SIMD3<Float> = SIMD3(0.03, 0.2, 0.05) {
+    public var meridianXZRingColor: SIMD3<Float> = SIMD3(0.05, 0.3, 0.08) {
         didSet { requestRedraw() }
     }
 

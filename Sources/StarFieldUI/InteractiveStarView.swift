@@ -23,6 +23,10 @@ final class InteractiveStarView: MTKView {
 
     /// How far back release speed is averaged, in seconds.
     private let velocityWindow: TimeInterval = 0.08
+    /// A gap between drag events longer than this counts as a pause, in seconds.
+    private let pauseThreshold: TimeInterval = 0.05
+    /// Time charged to the first move after a pause, when the real interval isn't meaningful.
+    private let nominalEventInterval: TimeInterval = 1.0 / 60
 
     private var renderer: StarRenderer? {
         delegate as? StarRenderer
@@ -50,7 +54,13 @@ final class InteractiveStarView: MTKView {
             pan(by: delta)
         } else {
             renderer?.camera.rotate(by: delta * radiansPerPoint)
-            rotationSamples.append((delta, event.timestamp, interval))
+            // A long gap means the pointer paused (or this is the first move after the press):
+            // start measuring afresh so the pause doesn't count toward the release speed.
+            let paused = interval > pauseThreshold
+            if paused {
+                rotationSamples.removeAll()
+            }
+            rotationSamples.append((delta, event.timestamp, paused ? nominalEventInterval : interval))
             rotationSamples.removeAll { event.timestamp - $0.time > velocityWindow }
         }
     }

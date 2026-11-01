@@ -38,6 +38,31 @@ import Testing
         #expect(placed.isEmpty)
     }
 
+    @Test func pinnedLabelFlipsLeftAtTheRightEdge() throws {
+        var pinned = candidate(1, at: SIMD2(790, 300), priority: 99)
+        pinned.isPinned = true
+        let placed = LabelLayout.place([pinned], in: viewport, maxCount: 10)
+        let origin = try #require(placed.first).origin
+        #expect(origin.x + size.x <= 790 - 4)
+        #expect(origin.y == 292)
+    }
+
+    @Test func pinnedLabelIsClampedIntoTheViewport() throws {
+        var pinned = candidate(1, at: SIMD2(30, 2), priority: 0)
+        pinned.size = SIMD2(780, 16)
+        pinned.isPinned = true
+        let origin = try #require(LabelLayout.place([pinned], in: viewport, maxCount: 10).first).origin
+        #expect(origin.x >= 0 && origin.x + 780 <= viewport.x)
+        #expect(origin.y == 0)
+    }
+
+    @Test func pinnedLabelGoesFirstAndBlocksOthers() {
+        var pinned = candidate(1, at: SIMD2(100, 100), priority: 50)
+        pinned.isPinned = true
+        let placed = LabelLayout.place([candidate(2, at: SIMD2(102, 102), priority: 0), pinned], in: viewport, maxCount: 10)
+        #expect(placed.map(\.id) == [1])
+    }
+
     @Test func respectsMaxCountInPriorityOrder() {
         let candidates = (0..<10).map { candidate($0, at: SIMD2(50, Float(30 + $0 * 40)), priority: Float(10 - $0)) }
         let placed = LabelLayout.place(candidates, in: viewport, maxCount: 3)

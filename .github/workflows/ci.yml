@@ -1,0 +1,18 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  catalog-linux:
+    name: StarCatalog tests (Linux)
+    runs-on: ubuntu-latest
+    container: swift:6.4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: swift build --target StarCatalog
+      - name: Test
+        run: swift test

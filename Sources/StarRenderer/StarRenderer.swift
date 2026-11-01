@@ -63,6 +63,27 @@ public final class StarRenderer: NSObject {
         didSet { requestRedraw() }
     }
 
+    /// Draws star names. Named stars (not catalog numbers) are labeled when they would be
+    /// brighter than `labelMagnitudeLimit` as seen from the camera; the selected star is always labeled.
+    public var showsLabels = false {
+        didSet { requestRedraw() }
+    }
+
+    /// Faintest apparent magnitude, seen from the camera, that gets a label. 6 is the naked-eye limit.
+    public var labelMagnitudeLimit: Float = 6 {
+        didSet { requestRedraw() }
+    }
+
+    /// Most labels shown at once; the brightest win.
+    public var maxLabels = 80 {
+        didSet { requestRedraw() }
+    }
+
+    /// Linear RGB of star names.
+    public var labelColor: SIMD3<Float> = SIMD3(0.72, 0.77, 0.85) {
+        didSet { requestRedraw() }
+    }
+
     /// Linear RGB of the selection ring.
     public var selectionRingColor: SIMD3<Float> = SIMD3(0.25, 0.75, 1) {
         didSet { requestRedraw() }
@@ -96,10 +117,23 @@ public final class StarRenderer: NSObject {
 
     /// Star positions in catalog order, for picking.
     private let positions: [SIMD3<Float>]
+    /// Normalized sizes for the current size mode, in catalog order.
+    private var normalizedSizes: [Float] = []
+    /// Indices of stars with proper, Bayer or Flamsteed names.
+    private let namedStarIndices: [Int]
+
+    /// Names of every named star, built the first time labels are drawn.
+    private lazy var labelAtlas: LabelAtlas? = LabelAtlas(
+        device: device,
+        labels: namedStarIndices.map { (id: catalog.stars[$0].id, text: catalog.stars[$0].name) }
+    )
+    /// The selected star's name, when it isn't in the atlas (catalog numbers).
+    private var selectedLabelAtlas: (id: Star.ID, atlas: LabelAtlas)?
 
     private let commandQueue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
     private let ringPipeline: MTLRenderPipelineState
+    private let labelPipeline: MTLRenderPipelineState
     private var instanceBuffer: MTLBuffer?
     private var instanceCount = 0
     private weak var view: MTKView?
@@ -111,12 +145,15 @@ public final class StarRenderer: NSObject {
         self.device = device
         self.catalog = catalog
         positions = catalog.stars.map(\.position)
+        namedStarIndices = catalog.stars.indices.filter { !catalog.stars[$0].isCatalogDesignation }
         commandQueue = queue
 
         guard let library = try? device.makeDefaultLibrary(bundle: .module),
               let vertexFunction = library.makeFunction(name: "starVertex"),
               let starFragment = library.makeFunction(name: "starFragment"),
-              let ringFragment = library.makeFunction(name: "ringFragment")
+              let ringFragment = library.makeFunction(name: "ringFragment"),
+              let labelVertex = library.makeFunction(name: "labelVertex"),
+              let labelFragment = library.makeFunction(name: "labelFragment")
         else {
             throw StarRendererError.shaderLibraryMissing
         }
@@ -139,6 +176,19 @@ public final class StarRenderer: NSObject {
         }
         pipeline = try makePipeline("Stars", fragment: starFragment)
         ringPipeline = try makePipeline("Selection ring", fragment: ringFragment)
+
+        let labelDescriptor = MTLRenderPipelineDescriptor()
+        labelDescriptor.label = "Labels"
+        labelDescriptor.vertexFunction = labelVertex
+        labelDescriptor.fragmentFunction = labelFragment
+        let labelAttachment = labelDescriptor.colorAttachments[0]!
+        labelAttachment.pixelFormat = Self.pixelFormat
+        labelAttachment.isBlendingEnabled = true
+        labelAttachment.sourceRGBBlendFactor = .one
+        labelAttachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
+        labelAttachment.sourceAlphaBlendFactor = .one
+        labelAttachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        labelPipeline = try device.makeRenderPipelineState(descriptor: labelDescriptor)
 
         super.init()
         try rebuildInstances()
@@ -262,6 +312,7 @@ public final class StarRenderer: NSObject {
 
     private func rebuildInstances() throws {
         let sizes = catalog.normalizedSizes(for: sizeMode)
+        normalizedSizes = sizes
         var instances = zip(catalog.stars, sizes).map { star, size in
             StarInstance(
                 positionSize: SIMD4(star.position, size),
@@ -327,10 +378,122 @@ public final class StarRenderer: NSObject {
             encoder.setVertexBytes(&ringUniforms, length: MemoryLayout<FrameUniforms>.stride, index: 1)
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         }
+
+        if showsLabels {
+            drawLabels(with: encoder, in: view, pixelsPerPoint: pixelsPerPoint)
+        }
         encoder.endEncoding()
 
         commandBuffer.present(drawable)
         commandBuffer.commit()
+    }
+}
+
+// MARK: Labels
+
+extension StarRenderer {
+    /// Parsecs per light year, for apparent magnitude.
+    private static let parsecsPerLightYear: Float = 1 / 3.261_56
+
+    private func drawLabels(with encoder: MTLRenderCommandEncoder, in view: MTKView, pixelsPerPoint: Float) {
+        guard let atlas = labelAtlas else { return }
+        let viewport = SIMD2(Float(view.bounds.width), Float(view.bounds.height))
+        let eye = camera.position
+
+        var candidates: [LabelCandidate] = []
+        var opacity: [Int: Float] = [:]
+
+        // The selected star always gets a label, even a catalog number.
+        var selectedEntry: (entry: LabelAtlas.Entry, texture: MTLTexture)?
+        if let id = selectedStarID, let star = catalog.star(withID: id),
+           let anchor = camera.project(star.position, viewportSize: viewport) {
+            if let entry = atlas.entries[id] {
+                selectedEntry = (entry, atlas.texture)
+            } else if let separate = labelAtlas(forSelected: star), let entry = separate.entries[id] {
+                selectedEntry = (entry, separate.texture)
+            }
+            if let selectedEntry {
+                candidates.append(LabelCandidate(
+                    id: id, anchor: anchor, radius: selectionRingDiameter / 2,
+                    size: selectedEntry.entry.size, priority: -.infinity
+                ))
+            }
+        }
+
+        for index in namedStarIndices {
+            let star = catalog.stars[index]
+            guard star.id != selectedStarID, let entry = atlas.entries[star.id],
+                  let anchor = camera.project(star.position, viewportSize: viewport) else { continue }
+            let parsecs = max(simd_distance(star.position, eye), 0.001) * Self.parsecsPerLightYear
+            let apparent = Float(star.absoluteMagnitude) + 5 * log10(parsecs) - 5
+            guard apparent <= labelMagnitudeLimit else { continue }
+            candidates.append(LabelCandidate(
+                id: star.id, anchor: anchor, radius: drawnDiameter(ofStarAt: index) / 2,
+                size: entry.size, priority: apparent
+            ))
+            // Fade labels that are close to the limit.
+            opacity[star.id] = min(max((labelMagnitudeLimit - apparent) / 2, 0.45), 1)
+        }
+
+        let placements = LabelLayout.place(candidates, in: viewport, maxCount: maxLabels)
+        var atlasLabels: [LabelInstance] = []
+        var separateLabel: (instance: LabelInstance, texture: MTLTexture)?
+        for placement in placements {
+            let isSelected = placement.id == selectedStarID
+            guard let match = isSelected
+                ? selectedEntry
+                : atlas.entries[placement.id].map({ (entry: $0, texture: atlas.texture) })
+            else { continue }
+            let entry = match.entry
+            let texture = match.texture
+            let instance = LabelInstance(
+                rect: SIMD4(placement.origin * pixelsPerPoint, entry.size * pixelsPerPoint),
+                uvRect: SIMD4(entry.uvOrigin, entry.uvSize),
+                color: isSelected ? SIMD4(selectionRingColor, 1) : SIMD4(labelColor, opacity[placement.id] ?? 1)
+            )
+            if texture === atlas.texture {
+                atlasLabels.append(instance)
+            } else {
+                separateLabel = (instance, texture)
+            }
+        }
+
+        var drawableSize = SIMD2(Float(view.drawableSize.width), Float(view.drawableSize.height))
+        encoder.setRenderPipelineState(labelPipeline)
+        encoder.setVertexBytes(&drawableSize, length: MemoryLayout<SIMD2<Float>>.stride, index: 1)
+        if !atlasLabels.isEmpty {
+            // At most maxLabels instances; setVertexBytes is limited to 4 KB, so use a buffer past that.
+            let length = MemoryLayout<LabelInstance>.stride * atlasLabels.count
+            if length <= 4_096 {
+                encoder.setVertexBytes(atlasLabels, length: length, index: 0)
+            } else if let buffer = device.makeBuffer(bytes: atlasLabels, length: length) {
+                encoder.setVertexBuffer(buffer, offset: 0, index: 0)
+            }
+            encoder.setFragmentTexture(atlas.texture, index: 0)
+            encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: atlasLabels.count)
+        }
+        if let separateLabel {
+            var instance = separateLabel.instance
+            encoder.setVertexBytes(&instance, length: MemoryLayout<LabelInstance>.stride, index: 0)
+            encoder.setFragmentTexture(separateLabel.texture, index: 0)
+            encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        }
+    }
+
+    /// A one-label atlas for a selected star whose name isn't in the main atlas, cached until the selection changes.
+    private func labelAtlas(forSelected star: Star) -> LabelAtlas? {
+        if let cached = selectedLabelAtlas, cached.id == star.id {
+            return cached.atlas
+        }
+        guard let atlas = LabelAtlas(device: device, labels: [(id: star.id, text: star.name)], width: 1_024) else { return nil }
+        selectedLabelAtlas = (star.id, atlas)
+        return atlas
+    }
+
+    /// On-screen diameter of a star, in points, matching the vertex shader.
+    private func drawnDiameter(ofStarAt index: Int) -> Float {
+        let size = pow(normalizedSizes[index], sizeExponent)
+        return pointSizeRange.lowerBound + (pointSizeRange.upperBound - pointSizeRange.lowerBound) * size
     }
 }
 

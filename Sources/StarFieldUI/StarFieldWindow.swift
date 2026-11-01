@@ -17,13 +17,13 @@ public struct StarFieldScene: Scene {
     public var body: some Scene {
         #if os(macOS)
         WindowGroup(title) {
-            StarFieldView()
+            StarFieldBrowser()
                 .frame(minWidth: 480, minHeight: 360)
         }
         .defaultSize(width: 1_000, height: 750)
         #else
         WindowGroup(title) {
-            StarFieldView()
+            StarFieldBrowser()
         }
         #endif
     }

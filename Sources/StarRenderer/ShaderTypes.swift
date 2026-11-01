@@ -19,3 +19,13 @@ struct FrameUniforms {
     var saturation: Float
     var padding: Float = 0
 }
+
+/// One on-screen label. Layout matches `LabelInstance` in Shaders.metal.
+struct LabelInstance {
+    /// x, y, width, height in drawable pixels, from the top-left.
+    var rect: SIMD4<Float>
+    /// u, v, width, height in the atlas.
+    var uvRect: SIMD4<Float>
+    /// rgb: linear color; a: opacity.
+    var color: SIMD4<Float>
+}

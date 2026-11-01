@@ -131,6 +131,7 @@ public struct StarFieldView: View {
             renderer.sizeMode = sizeMode
             renderer.showsLabels = showsLabels
             renderer.showsReferenceRings = showsReferenceRings
+            renderer.referenceRingPlanes = .all
             renderer.showsSunMarker = true
             renderer.selectedStarID = selection.wrappedValue
             renderer.labelExclusions = labelExclusions

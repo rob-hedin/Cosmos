@@ -107,6 +107,15 @@ public final class StarRenderer: NSObject {
         }
     }
 
+    /// Which planes through the Sun get a set of reference rings. Only the equator's rings are labeled.
+    public var referenceRingPlanes: ReferenceRingPlanes = .equator {
+        didSet {
+            guard referenceRingPlanes != oldValue else { return }
+            rebuildReferenceRings()
+            requestRedraw()
+        }
+    }
+
     /// Linear RGB of the reference rings and their labels.
     public var referenceRingColor: SIMD3<Float> = SIMD3(0.18, 0.26, 0.4) {
         didSet { requestRedraw() }
@@ -183,6 +192,7 @@ public final class StarRenderer: NSObject {
     /// One closed line strip per reference ring, back to back.
     private var ringPointBuffer: MTLBuffer?
     private static let ringSegments = 256
+    private var ringCount = 0
     /// Labels for the Sun and the reference rings, under ids that no star uses.
     private lazy var overlayAtlas: LabelAtlas? = Self.makeOverlayAtlas(device: device, radii: referenceRingRadii)
     /// Keys into `overlayAtlas` only; layout uses its own candidate indices.
@@ -411,13 +421,22 @@ public final class StarRenderer: NSObject {
     private func rebuildReferenceRings() {
         let segments = Self.ringSegments
         var points: [SIMD4<Float>] = []
-        points.reserveCapacity(referenceRingRadii.count * (segments + 1))
-        for radius in referenceRingRadii {
-            for step in 0...segments {
-                let angle = Float(step) / Float(segments) * 2 * .pi
-                points.append(SIMD4(radius * cos(angle), radius * sin(angle), 0, 1))
+        let planes = referenceRingPlanes.orderedPlanes
+        points.reserveCapacity(planes.count * referenceRingRadii.count * (segments + 1))
+        for plane in planes {
+            for radius in referenceRingRadii {
+                for step in 0...segments {
+                    let angle = Float(step) / Float(segments) * 2 * .pi
+                    let (a, b) = (radius * cos(angle), radius * sin(angle))
+                    switch plane {
+                    case .equator: points.append(SIMD4(a, b, 0, 1))
+                    case .meridianXZ: points.append(SIMD4(a, 0, b, 1))
+                    default: points.append(SIMD4(0, a, b, 1))
+                    }
+                }
             }
         }
+        ringCount = planes.count * referenceRingRadii.count
         ringPointBuffer = points.isEmpty ? nil : device.makeBuffer(
             bytes: points, length: MemoryLayout<SIMD4<Float>>.stride * points.count, options: .storageModeShared
         )
@@ -462,7 +481,7 @@ public final class StarRenderer: NSObject {
             encoder.setVertexBytes(&uniforms, length: MemoryLayout<FrameUniforms>.stride, index: 1)
             encoder.setFragmentBytes(&color, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
             let perRing = Self.ringSegments + 1
-            for index in referenceRingRadii.indices {
+            for index in 0..<ringCount {
                 encoder.drawPrimitives(type: .lineStrip, vertexStart: index * perRing, vertexCount: perRing)
             }
         }
@@ -714,5 +733,25 @@ private final class BufferPool: @unchecked Sendable {
             }
             buffers.append(handoff.buffer)
         }
+    }
+}
+
+/// Planes through the Sun for reference rings, in the equatorial frame (+z toward the north pole).
+public struct ReferenceRingPlanes: OptionSet, Sendable, Hashable {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+
+    /// The celestial equator's plane (x-y). Its rings carry the distance labels.
+    public static let equator = ReferenceRingPlanes(rawValue: 1 << 0)
+    /// The plane through the poles and RA 0h/12h (x-z).
+    public static let meridianXZ = ReferenceRingPlanes(rawValue: 1 << 1)
+    /// The plane through the poles and RA 6h/18h (y-z).
+    public static let meridianYZ = ReferenceRingPlanes(rawValue: 1 << 2)
+    /// All three, at right angles to each other.
+    public static let all: ReferenceRingPlanes = [.equator, .meridianXZ, .meridianYZ]
+
+    /// Each plane on its own, equator first.
+    var orderedPlanes: [ReferenceRingPlanes] {
+        [.equator, .meridianXZ, .meridianYZ].filter(contains)
     }
 }

@@ -48,3 +48,72 @@ import Testing
         #expect(MemoryLayout<FrameUniforms>.stride == 96)
     }
 }
+
+@Suite struct CameraManipulationTests {
+    private func ndc(_ point: SIMD3<Float>, _ camera: OrbitCamera) -> SIMD3<Float> {
+        let clip = camera.viewProjection(aspectRatio: 1) * SIMD4(point, 1)
+        return SIMD3(clip.x, clip.y, clip.z) / clip.w
+    }
+
+    /// A point halfway between the camera and its target, which an orbit moves with the drag.
+    private func nearPoint(_ camera: OrbitCamera) -> SIMD3<Float> {
+        (camera.position + camera.target) / 2
+    }
+
+    @Test func dragRightMovesNearSideRight() {
+        var camera = OrbitCamera()
+        let point = nearPoint(camera)
+        camera.rotate(by: SIMD2(0.1, 0))
+        #expect(ndc(point, camera).x > 0)
+    }
+
+    @Test func dragDownMovesNearSideDown() {
+        var camera = OrbitCamera()
+        let point = nearPoint(camera)
+        camera.rotate(by: SIMD2(0, 0.1))
+        #expect(ndc(point, camera).y < 0)
+    }
+
+    @Test func rotationKeepsDistanceAndTarget() {
+        var camera = OrbitCamera()
+        camera.rotate(by: SIMD2(1.3, -0.7))
+        camera.roll(by: 0.4)
+        #expect(abs(simd_distance(camera.position, camera.target) - camera.distance) < 1e-3)
+        #expect(camera.target == .zero)
+        #expect(abs(simd_length(camera.orientation.vector) - 1) < 1e-5)
+    }
+
+    @Test func zoomScalesAndClamps() {
+        var camera = OrbitCamera()
+        camera.zoom(by: 0.5)
+        #expect(abs(camera.distance - 225) < 1e-3)
+        camera.zoom(by: 1e-9)
+        #expect(camera.distance == OrbitCamera.distanceRange.lowerBound)
+        camera.zoom(by: 1e9)
+        #expect(camera.distance == OrbitCamera.distanceRange.upperBound)
+        camera.zoom(by: .nan)
+        #expect(camera.distance == OrbitCamera.distanceRange.upperBound)
+    }
+
+    @Test func panMovesSceneWithDrag() {
+        var camera = OrbitCamera()
+        camera.pan(byPoints: SIMD2(50, 30), viewportShortSide: 500)
+        let oldTarget = ndc(.zero, camera)
+        #expect(oldTarget.x > 0) // dragged right
+        #expect(oldTarget.y < 0) // dragged down
+        // The scene moves exactly as far as the pointer: 50 of 500 points is 0.2 in NDC.
+        #expect(abs(oldTarget.x - 0.2) < 1e-3)
+    }
+
+    @Test func resetRestoresHomeView() {
+        var camera = OrbitCamera()
+        camera.fieldOfView = 1
+        camera.rotate(by: SIMD2(2, 1))
+        camera.zoom(by: 0.1)
+        camera.pan(byPoints: SIMD2(10, 10), viewportShortSide: 100)
+        camera.reset()
+        var expected = OrbitCamera()
+        expected.fieldOfView = 1
+        #expect(camera == expected)
+    }
+}

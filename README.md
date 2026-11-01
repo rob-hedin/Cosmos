@@ -7,8 +7,8 @@ A Swift and Metal framework for macOS 27 and iOS/iPadOS 27 that shows the 11,975
 | Module | Status | What it does |
 | --- | --- | --- |
 | `StarCatalog` | Done | Loads the bundled CSV; computes 3D positions (light years, Sun at origin, equatorial frame), luminosity, temperature, estimated radius, and blackbody color; size normalization for both size modes |
-| `StarRenderer` | First light | Metal renderer: one instanced draw of all stars with additive glow, Sun marker, `OrbitCamera` math. Input and labels to come |
-| `StarFieldUI` | First light | SwiftUI `StarFieldView`, `StarFieldScene` (macOS and iOS), `StarFieldWindow.open()` (macOS). Input and selection to come |
+| `StarRenderer` | First light | Metal renderer: one instanced draw of all stars with additive glow, Sun marker, `OrbitCamera` with rotate, zoom, pan, roll, reset and fling. Labels to come |
+| `StarFieldUI` | First light | SwiftUI `StarFieldView`, `StarFieldScene` (macOS and iOS), `StarFieldWindow.open()` (macOS), mouse and trackpad input. Touch input and selection to come |
 
 ## Usage
 
@@ -27,6 +27,14 @@ swift run CosmosDemo
 ```
 
 Opens a macOS window with every star, viewed from outside the 200 ly sphere with north up.
+
+| Action | Input |
+| --- | --- |
+| Rotate | Drag (release while moving to fling) |
+| Zoom | Scroll wheel, trackpad scroll or pinch |
+| Pan | Shift-drag, right-drag or middle-drag |
+| Roll | Trackpad rotate |
+| Reset | Double-click |
 
 To show stars in your own app, use `StarFieldScene()` as a scene, place `StarFieldView()` in your UI, or call `StarFieldWindow.open()` from AppKit.
 

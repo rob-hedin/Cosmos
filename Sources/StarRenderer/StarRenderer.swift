@@ -172,7 +172,7 @@ public final class StarRenderer: NSObject {
     private let labelBufferPool = BufferPool()
     /// Per-frame label scratch storage, kept to avoid reallocating every frame.
     private var labelCandidates: [LabelCandidate] = []
-    private var labelOpacity: [Int: Float] = [:]
+    private var labelSources: [LabelSource] = []
     private var labelInstances: [LabelInstance] = []
 
     private let commandQueue: MTLCommandQueue
@@ -185,8 +185,16 @@ public final class StarRenderer: NSObject {
     private static let ringSegments = 256
     /// Labels for the Sun and the reference rings, under ids that no star uses.
     private lazy var overlayAtlas: LabelAtlas? = Self.makeOverlayAtlas(device: device, radii: referenceRingRadii)
+    /// Keys into `overlayAtlas` only; layout uses its own candidate indices.
     private static let sunLabelID = -1
     private static func ringLabelID(_ index: Int) -> Int { -2 - index }
+
+    /// Where a label's text lives and how it's tinted.
+    private struct LabelSource {
+        let entry: LabelAtlas.Entry
+        let texture: MTLTexture
+        let color: SIMD4<Float>
+    }
     private var instanceBuffer: MTLBuffer?
     private var instanceCount = 0
     private weak var view: MTKView?
@@ -511,46 +519,47 @@ extension StarRenderer {
         let atlas = showsLabels ? labelAtlas : nil
         let overlay = showsReferenceRings || showsSunMarker ? overlayAtlas : nil
 
+        // Candidates are identified to the layout by their index here, so star IDs (any Int) and
+        // the Sun and ring labels can never collide. `labelSources` runs parallel to `labelCandidates`.
         labelCandidates.removeAll(keepingCapacity: true)
-        labelOpacity.removeAll(keepingCapacity: true)
-        /// Where each candidate's text lives, and its color.
-        var sources: [Int: (entry: LabelAtlas.Entry, texture: MTLTexture, color: SIMD4<Float>)] = [:]
+        labelSources.removeAll(keepingCapacity: true)
+        func add(
+            _ entry: LabelAtlas.Entry, from texture: MTLTexture, color: SIMD4<Float>, at anchor: SIMD2<Float>,
+            radius: Float, priority: Float, isPinned: Bool = false, triesOtherSides: Bool = false
+        ) {
+            labelCandidates.append(LabelCandidate(
+                id: labelCandidates.count, anchor: anchor, radius: radius, size: entry.size, priority: priority,
+                isPinned: isPinned, triesOtherSides: triesOtherSides
+            ))
+            labelSources.append(LabelSource(entry: entry, texture: texture, color: color))
+        }
+        func project(_ position: SIMD3<Float>) -> SIMD2<Float>? {
+            camera.project(position, viewProjection: viewProjection, viewportSize: viewport)
+        }
 
         // The selected star always gets a label, even a catalog number.
-        if let atlas, let id = selectedStarID, let star = catalog.star(withID: id),
-           let anchor = camera.project(star.position, viewProjection: viewProjection, viewportSize: viewport) {
-            let separate = atlas.entries[id] == nil ? labelAtlas(forSelected: star) : nil
-            let source = separate ?? atlas
+        if let atlas, let id = selectedStarID, let star = catalog.star(withID: id), let anchor = project(star.position) {
+            let source = atlas.entries[id] == nil ? labelAtlas(forSelected: star) ?? atlas : atlas
             if let entry = source.entries[id] {
-                sources[id] = (entry, source.texture, SIMD4(selectionRingColor, 1))
-                labelCandidates.append(LabelCandidate(
-                    id: id, anchor: anchor, radius: selectionRingDiameter / 2,
-                    size: entry.size, priority: -.infinity, isPinned: true
-                ))
+                add(entry, from: source.texture, color: SIMD4(selectionRingColor, 1), at: anchor,
+                    radius: selectionRingDiameter / 2, priority: -.infinity, isPinned: true)
             }
         }
 
-        // The Sun and ring labels go before any star's.
+        // The Sun and ring labels go before any star's, and look for room on any side.
         if let overlay {
-            func addOverlay(id: Int, at position: SIMD3<Float>, radius: Float, priority: Float, color: SIMD4<Float>) {
-                guard let entry = overlay.entries[id],
-                      let anchor = camera.project(position, viewProjection: viewProjection, viewportSize: viewport)
-                else { return }
-                sources[id] = (entry, overlay.texture, color)
-                labelCandidates.append(LabelCandidate(id: id, anchor: anchor, radius: radius, size: entry.size, priority: priority))
-            }
-            if showsSunMarker {
-                addOverlay(id: Self.sunLabelID, at: .zero, radius: Self.sunMarkerDiameter / 2, priority: -2_000,
-                           color: SIMD4(sunMarkerColor, 1))
+            if showsSunMarker, let entry = overlay.entries[Self.sunLabelID], let anchor = project(.zero) {
+                add(entry, from: overlay.texture, color: SIMD4(sunMarkerColor, 1), at: anchor,
+                    radius: Self.sunMarkerDiameter / 2, priority: -2_000, triesOtherSides: true)
             }
             if showsReferenceRings {
-                // Label each ring where it crosses the screen's rightward direction, so they line up.
-                var across = SIMD3(camera.right.x, camera.right.y, 0)
-                across = simd_length(across) > 1e-3 ? simd_normalize(across) : SIMD3(1, 0, 0)
-                let ringLabelColor = SIMD4(simd_min(referenceRingColor * 2.2, SIMD3(repeating: 1)), 1)
+                let color = SIMD4(simd_min(referenceRingColor * 2.2, SIMD3(repeating: 1)), 1)
                 for (index, radius) in referenceRingRadii.enumerated() {
-                    addOverlay(id: Self.ringLabelID(index), at: across * radius, radius: 2,
-                               priority: -1_000 + Float(index), color: ringLabelColor)
+                    guard let entry = overlay.entries[Self.ringLabelID(index)],
+                          let point = ringLabelPoint(radius: radius), let anchor = project(point)
+                    else { continue }
+                    add(entry, from: overlay.texture, color: color, at: anchor,
+                        radius: 2, priority: -1_000 + Float(index), triesOtherSides: true)
                 }
             }
         }
@@ -563,14 +572,12 @@ extension StarRenderer {
                 let parsecs = max(simd_distance(star.position, eye), 0.001) * Self.parsecsPerLightYear
                 let apparent = Float(star.absoluteMagnitude) + 5 * log10(parsecs) - 5
                 guard apparent <= labelMagnitudeLimit, let entry = atlas.entries[star.id],
-                      let anchor = camera.project(star.position, viewProjection: viewProjection, viewportSize: viewport)
+                      let anchor = project(star.position)
                 else { continue }
-                labelCandidates.append(LabelCandidate(
-                    id: star.id, anchor: anchor, radius: drawnDiameter(ofStarAt: index) / 2,
-                    size: entry.size, priority: apparent
-                ))
                 // Fade labels that are close to the limit.
-                labelOpacity[star.id] = min(max((labelMagnitudeLimit - apparent) / 2, 0.45), 1)
+                let opacity = min(max((labelMagnitudeLimit - apparent) / 2, 0.45), 1)
+                add(entry, from: atlas.texture, color: SIMD4(labelColor, opacity), at: anchor,
+                    radius: drawnDiameter(ofStarAt: index) / 2, priority: apparent)
             }
         }
         guard !labelCandidates.isEmpty else { return }
@@ -591,25 +598,16 @@ extension StarRenderer {
         labelInstances.removeAll(keepingCapacity: true)
         var others: [(instance: LabelInstance, texture: MTLTexture)] = []
         for placement in placements {
-            let entry: LabelAtlas.Entry
-            let texture: MTLTexture
-            let color: SIMD4<Float>
-            if let source = sources[placement.id] {
-                (entry, texture, color) = source
-            } else if let atlas, let found = atlas.entries[placement.id] {
-                (entry, texture, color) = (found, atlas.texture, SIMD4(labelColor, labelOpacity[placement.id] ?? 1))
-            } else {
-                continue
-            }
+            let source = labelSources[placement.id]
             let instance = LabelInstance(
-                rect: SIMD4(lowHalf: placement.origin * pixelsPerPoint, highHalf: entry.size * pixelsPerPoint),
-                uvRect: SIMD4(lowHalf: entry.uvOrigin, highHalf: entry.uvSize),
-                color: color
+                rect: SIMD4(lowHalf: placement.origin * pixelsPerPoint, highHalf: source.entry.size * pixelsPerPoint),
+                uvRect: SIMD4(lowHalf: source.entry.uvOrigin, highHalf: source.entry.uvSize),
+                color: source.color
             )
-            if let atlas, texture === atlas.texture {
+            if let atlas, source.texture === atlas.texture {
                 labelInstances.append(instance)
             } else {
-                others.append((instance, texture))
+                others.append((instance, source.texture))
             }
         }
 
@@ -626,6 +624,17 @@ extension StarRenderer {
             encoder.setFragmentTexture(other.texture, index: 0)
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         }
+    }
+
+    /// Where to label a reference ring: where it crosses the horizontal screen line through the
+    /// Sun, on the right, so the labels line up beside the Sun however the view is turned. That
+    /// line, seen from the eye, is the plane through the eye containing the screen's right
+    /// direction and the Sun. Nil when the ring doesn't cross it in front of the camera.
+    private func ringLabelPoint(radius: Float) -> SIMD3<Float>? {
+        RingLabelGeometry.point(
+            radius: radius, eye: camera.position, right: camera.right,
+            forward: simd_normalize(camera.target - camera.position)
+        )
     }
 
     /// Binds `labelInstances` at vertex index 0. setVertexBytes is limited to 4 KB, so larger sets go

@@ -21,6 +21,7 @@ public struct StarFieldView: View {
     /// Global frames of the star view and the info card, so labels can keep clear of the card.
     @State private var starViewFrame: CGRect = .zero
     @State private var cardFrame: CGRect?
+    @Environment(\.starFieldLabelObstacles) private var labelObstacles
 
     /// Shows the bundled catalog of stars within 200 light years.
     public init(
@@ -106,13 +107,14 @@ public struct StarFieldView: View {
         .onChange(of: labelExclusions) { renderer?.labelExclusions = labelExclusions }
     }
 
-    /// The info card's frame in the star view's coordinates.
+    /// The info card's and any overlaid controls' frames, in the star view's coordinates.
     private var labelExclusions: [LabelLayout.Rect] {
-        guard let cardFrame else { return [] }
-        return [LabelLayout.Rect(
-            origin: SIMD2(Float(cardFrame.minX - starViewFrame.minX), Float(cardFrame.minY - starViewFrame.minY)),
-            size: SIMD2(Float(cardFrame.width), Float(cardFrame.height))
-        )]
+        ([cardFrame].compactMap { $0 } + labelObstacles).map { frame in
+            LabelLayout.Rect(
+                origin: SIMD2(Float(frame.minX - starViewFrame.minX), Float(frame.minY - starViewFrame.minY)),
+                size: SIMD2(Float(frame.width), Float(frame.height))
+            )
+        }
     }
 
     private func makeRenderer() {
@@ -128,6 +130,19 @@ public struct StarFieldView: View {
             renderer = nil
             failure = error
         }
+    }
+}
+
+extension EnvironmentValues {
+    /// Global frames of views drawn over a star field, which star names should keep clear of.
+    @Entry var starFieldLabelObstacles: [CGRect] = []
+}
+
+extension View {
+    /// Keeps star names in the `StarFieldView`s inside this view clear of the given regions,
+    /// such as controls you overlay on the star field. Frames are in global coordinates.
+    public func starFieldLabelObstacles(_ frames: [CGRect]) -> some View {
+        environment(\.starFieldLabelObstacles, frames)
     }
 }
 

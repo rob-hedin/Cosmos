@@ -84,6 +84,15 @@ import Testing
         #expect(origin.y + size.y <= 400 - 2)
     }
 
+    @Test func pinnedLabelUnderAnObstacleMovesOutside() throws {
+        let card = LabelLayout.Rect(origin: SIMD2(0, 400), size: SIMD2(300, 200))
+        var pinned = candidate(1, at: SIMD2(150, 560), priority: 0)
+        pinned.isPinned = true
+        let origin = try #require(LabelLayout.place([pinned], in: viewport, avoiding: [card], maxCount: 10).first).origin
+        // Just right of the card, level with the star.
+        #expect(origin == SIMD2(303, 552))
+    }
+
     @Test func pinnedLabelGoesFirstAndBlocksOthers() {
         var pinned = candidate(1, at: SIMD2(100, 100), priority: 50)
         pinned.isPinned = true

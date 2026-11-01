@@ -83,7 +83,17 @@ public enum LabelLayout {
                 let centerX = candidate.anchor.x - size.x / 2
                 let above = SIMD2(centerX, candidate.anchor.y - candidate.radius - gap - size.y)
                 let below = SIMD2(centerX, candidate.anchor.y + candidate.radius + gap)
-                let clear = [right, left, above, below].first { origin in
+                // If the star is under an obstacle, also try just outside each of its edges.
+                let besideObstacles = obstacles.flatMap { box -> [SIMD2<Float>] in
+                    let far = box.origin + box.size
+                    return [
+                        SIMD2(far.x + gap, top),
+                        SIMD2(centerX, box.origin.y - gap - size.y),
+                        SIMD2(box.origin.x - gap - size.x, top),
+                        SIMD2(centerX, far.y + gap),
+                    ]
+                }
+                let clear = ([right, left, above, below] + besideObstacles).first { origin in
                     let far = origin + size
                     return origin.x >= low.x && origin.y >= low.y && far.x <= high.x && far.y <= high.y
                         && !obstacles.contains { overlaps(origin, size, $0.origin, $0.size) }

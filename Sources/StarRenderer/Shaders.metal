@@ -64,3 +64,13 @@ fragment float4 starFragment(StarVertexOut in [[stage_in]]) {
     float glow = 0.85 * exp(-r2 * 10.0) + 0.15 * exp(-r2 * 3.0);
     return float4(in.color * glow, 1);
 }
+
+/// A thin ring around the selected star. Drawn with the star vertex shader, one instance.
+fragment float4 ringFragment(StarVertexOut in [[stage_in]]) {
+    float r = length(in.local);
+    float ring = smoothstep(0.70, 0.78, r) * (1.0 - smoothstep(0.86, 0.94, r));
+    if (ring <= 0) {
+        discard_fragment();
+    }
+    return float4(in.color * ring, 1);
+}

@@ -42,6 +42,16 @@ public struct OrbitCamera: Sendable, Equatable {
         projectionMatrix(aspectRatio: aspectRatio) * viewMatrix
     }
 
+    /// Where a world point lands in a viewport, in points from the top-left corner (y down).
+    /// Returns nil for points behind the camera.
+    public func project(_ point: SIMD3<Float>, viewportSize: SIMD2<Float>) -> SIMD2<Float>? {
+        guard viewportSize.x > 0, viewportSize.y > 0 else { return nil }
+        let clip = viewProjection(aspectRatio: viewportSize.x / viewportSize.y) * SIMD4(point, 1)
+        guard clip.w > nearPlane else { return nil }
+        let ndc = SIMD2(clip.x, clip.y) / clip.w
+        return SIMD2((ndc.x + 1) / 2 * viewportSize.x, (1 - ndc.y) / 2 * viewportSize.y)
+    }
+
     // MARK: Manipulation
 
     /// Closest and farthest the camera may get to its target, in light years.

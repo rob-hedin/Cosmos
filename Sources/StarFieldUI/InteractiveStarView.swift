@@ -1,5 +1,7 @@
 import MetalKit
+import StarCatalog
 import StarRenderer
+import simd
 
 #if os(macOS)
 import AppKit
@@ -12,10 +14,21 @@ import AppKit
 /// | Zoom | Scroll wheel, trackpad scroll or pinch |
 /// | Pan | Shift-drag, right-drag or middle-drag |
 /// | Roll | Trackpad rotate |
-/// | Reset | Double-click |
+/// | Select | Click a star (click empty space to deselect) |
+/// | Fly to a star | Double-click it |
+/// | Reset | Double-click empty space |
 final class InteractiveStarView: MTKView {
     /// Rotation per point dragged, in radians.
     var radiansPerPoint: Float = 0.006
+
+    /// Called when a click selects a star, or with nil when a click lands on empty space.
+    var onSelect: (@MainActor (Star?) -> Void)?
+
+    /// Distance to orbit a star from after double-clicking it, in light years.
+    var flyToDistance: Float = 20
+
+    /// Total pointer travel since the press, to tell a click from a drag.
+    private var travel: Float = 0
 
     /// Recent rotation drags, for estimating release speed. Cleared on press and when panning.
     private var rotationSamples: [(delta: SIMD2<Float>, time: TimeInterval, interval: TimeInterval)] = []
@@ -40,13 +53,17 @@ final class InteractiveStarView: MTKView {
 
     override func mouseDown(with event: NSEvent) {
         beginDrag(at: event)
-        if event.clickCount == 2 {
-            renderer?.camera.reset()
+        guard event.clickCount == 2, let renderer else { return }
+        if let star = star(at: event) {
+            renderer.fly(to: star.position, distance: min(renderer.camera.distance, flyToDistance))
+        } else {
+            renderer.camera.reset()
         }
     }
 
     override func mouseDragged(with event: NSEvent) {
         let delta = SIMD2(Float(event.deltaX), Float(event.deltaY))
+        travel += simd_length(delta)
         let interval = event.timestamp - lastEventTime
         lastEventTime = event.timestamp
         if event.modifierFlags.contains(.shift) {
@@ -67,6 +84,10 @@ final class InteractiveStarView: MTKView {
 
     override func mouseUp(with event: NSEvent) {
         defer { rotationSamples.removeAll() }
+        if event.clickCount == 1, travel < 3 {
+            onSelect?(star(at: event))
+            return
+        }
         // Fling only if the last move was a rotation and the pointer was still moving when released.
         guard let last = rotationSamples.last, event.timestamp - last.time < 0.05 else { return }
         let distance = rotationSamples.reduce(SIMD2<Float>.zero) { $0 + $1.delta }
@@ -83,9 +104,17 @@ final class InteractiveStarView: MTKView {
     }
 
     private func beginDrag(at event: NSEvent) {
-        renderer?.stopSpinning()
+        renderer?.stopMotion()
         rotationSamples.removeAll()
         lastEventTime = event.timestamp
+        travel = 0
+    }
+
+    /// The star under the pointer, if any.
+    private func star(at event: NSEvent) -> Star? {
+        let location = convert(event.locationInWindow, from: nil)
+        let topLeft = CGPoint(x: location.x, y: isFlipped ? location.y : bounds.height - location.y)
+        return renderer?.star(at: topLeft, viewSize: bounds.size)
     }
 
     override func rightMouseDragged(with event: NSEvent) {
@@ -119,5 +148,7 @@ final class InteractiveStarView: MTKView {
 }
 #else
 /// Touch gestures arrive in a later milestone; for now the iOS view is a plain MTKView.
-final class InteractiveStarView: MTKView {}
+final class InteractiveStarView: MTKView {
+    var onSelect: (@MainActor (Star?) -> Void)?
+}
 #endif

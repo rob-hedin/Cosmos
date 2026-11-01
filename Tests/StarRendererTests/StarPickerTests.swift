@@ -44,4 +44,35 @@ import Testing
         let positions = [camera.position * 2]
         #expect(StarPicker.nearest(to: SIMD2(400, 300), in: positions, camera: camera, viewportSize: viewport) == nil)
     }
+
+    @Test func ignoresStarsCenteredOffScreen() {
+        let camera = OrbitCamera()
+        // Walk a point left until it lands just past the viewport's left edge, mid-height.
+        var offScreen = SIMD3<Float>(-100, 0, 0)
+        while let p = camera.project(offScreen, viewportSize: viewport), p.x >= -10 {
+            offScreen.x -= 1
+        }
+        #expect(StarPicker.nearest(to: SIMD2(2, 300), in: [offScreen], camera: camera, viewportSize: viewport) == nil)
+    }
+
+    @Test func ignoresStarsBeyondTheFarPlane() {
+        var camera = OrbitCamera()
+        camera.farPlane = 100
+        #expect(StarPicker.nearest(to: SIMD2(400, 300), in: [.zero], camera: camera, viewportSize: viewport) == nil)
+    }
+
+    @Test func resultDoesNotDependOnOrder() {
+        let camera = OrbitCamera()
+        let towardCamera = simd_normalize(camera.position - camera.target)
+        // A chain of stars, each a little farther off the cursor on screen and a little nearer the camera.
+        let positions: [SIMD3<Float>] = (0..<4).map { step in
+            let s = Float(step)
+            return camera.target + towardCamera * (10 * s) + camera.right * (0.15 * s)
+        }
+        let forward = StarPicker.nearest(to: SIMD2(400, 300), in: positions, camera: camera, viewportSize: viewport)
+        let backward = StarPicker.nearest(to: SIMD2(400, 300), in: Array(positions.reversed()), camera: camera, viewportSize: viewport)
+            .map { positions.count - 1 - $0 }
+        #expect(forward != nil)
+        #expect(forward == backward)
+    }
 }

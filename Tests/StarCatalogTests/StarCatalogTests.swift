@@ -88,4 +88,14 @@ import Testing
         let proxima = try #require(catalog.star(named: "Proxima Centauri"))
         #expect(sizes[sirius.id] > sizes[proxima.id])
     }
+
+    @Test func starsAreFoundByIDInFilteredCatalogs() throws {
+        let full = try StarCatalog.bundled()
+        let sirius = try #require(full.star(named: "Sirius"))
+        let subset = StarCatalog(stars: full.stars.filter(\.isNakedEye).reversed())
+        #expect(subset.stars.first?.id != 0)
+        #expect(subset.star(withID: sirius.id) == sirius)
+        #expect(subset.star(withID: -1) == nil)
+        #expect(full.star(withID: sirius.id) == sirius)
+    }
 }

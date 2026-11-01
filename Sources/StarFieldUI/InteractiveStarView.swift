@@ -29,6 +29,8 @@ final class InteractiveStarView: MTKView {
 
     /// Total pointer travel since the press, to tell a click from a drag.
     private var travel: Float = 0
+    /// Click count of the current press; click actions run on release, and only if it stayed a click.
+    private var pressClickCount = 0
 
     /// Recent rotation drags, for estimating release speed. Cleared on press and when panning.
     private var rotationSamples: [(delta: SIMD2<Float>, time: TimeInterval, interval: TimeInterval)] = []
@@ -53,12 +55,7 @@ final class InteractiveStarView: MTKView {
 
     override func mouseDown(with event: NSEvent) {
         beginDrag(at: event)
-        guard event.clickCount == 2, let renderer else { return }
-        if let star = star(at: event) {
-            renderer.fly(to: star.position, distance: min(renderer.camera.distance, flyToDistance))
-        } else {
-            renderer.camera.reset()
-        }
+        pressClickCount = event.clickCount
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -84,8 +81,8 @@ final class InteractiveStarView: MTKView {
 
     override func mouseUp(with event: NSEvent) {
         defer { rotationSamples.removeAll() }
-        if event.clickCount == 1, travel < 3 {
-            onSelect?(star(at: event))
+        if travel < 3 {
+            click(count: pressClickCount, at: event)
             return
         }
         // Fling only if the last move was a rotation and the pointer was still moving when released.
@@ -108,6 +105,24 @@ final class InteractiveStarView: MTKView {
         rotationSamples.removeAll()
         lastEventTime = event.timestamp
         travel = 0
+    }
+
+    /// Single click selects (or deselects on empty space); double click flies to a star or resets.
+    private func click(count: Int, at event: NSEvent) {
+        let hit = star(at: event)
+        switch count {
+        case 1:
+            onSelect?(hit)
+        case 2:
+            guard let renderer else { return }
+            if let hit {
+                renderer.fly(to: hit.position, distance: min(renderer.camera.distance, flyToDistance))
+            } else {
+                renderer.camera.reset()
+            }
+        default:
+            break
+        }
     }
 
     /// The star under the pointer, if any.
@@ -135,10 +150,12 @@ final class InteractiveStarView: MTKView {
     override func scrollWheel(with event: NSEvent) {
         // Trackpads report fine-grained point deltas; mouse wheels report coarse lines.
         let perUnit: Float = event.hasPreciseScrollingDeltas ? 0.005 : 0.08
+        renderer?.cancelFlight()
         renderer?.camera.zoom(by: exp(-Float(event.scrollingDeltaY) * perUnit))
     }
 
     override func magnify(with event: NSEvent) {
+        renderer?.cancelFlight()
         renderer?.camera.zoom(by: 1 / max(1 + Float(event.magnification), 0.1))
     }
 

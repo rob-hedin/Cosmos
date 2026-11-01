@@ -53,9 +53,8 @@ public struct StarFieldView: View {
     }
 
     private var selectedStar: Star? {
-        guard let id = selection.wrappedValue, let stars = renderer?.catalog.stars,
-              stars.indices.contains(id) else { return nil }
-        return stars[id]
+        guard let id = selection.wrappedValue else { return nil }
+        return renderer?.catalog.star(withID: id)
     }
 
     public var body: some View {
@@ -84,7 +83,11 @@ public struct StarFieldView: View {
             }
         }
         .onAppear(perform: makeRenderer)
-        .onChange(of: catalog) { makeRenderer() }
+        .onChange(of: catalog) {
+            // IDs from the old catalog mean nothing in the new one.
+            selection.wrappedValue = nil
+            makeRenderer()
+        }
         .onChange(of: sizeMode) { renderer?.sizeMode = sizeMode }
         .onChange(of: selection.wrappedValue) { renderer?.selectedStarID = selection.wrappedValue }
     }

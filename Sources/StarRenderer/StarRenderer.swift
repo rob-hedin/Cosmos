@@ -64,7 +64,9 @@ public final class StarRenderer: NSObject {
     }
 
     /// Linear RGB of the selection ring.
-    public var selectionRingColor: SIMD3<Float> = SIMD3(0.25, 0.75, 1)
+    public var selectionRingColor: SIMD3<Float> = SIMD3(0.25, 0.75, 1) {
+        didSet { requestRedraw() }
+    }
 
     public static let pixelFormat: MTLPixelFormat = .bgra8Unorm_srgb
 
@@ -214,6 +216,12 @@ public final class StarRenderer: NSObject {
         stopSpinning()
     }
 
+    /// Stops a flight where it is, leaving any fling running.
+    public func cancelFlight() {
+        flight = nil
+        stopTimedDrawingIfIdle()
+    }
+
     /// Timed drawing: both flags off, per MTKView's documented modes.
     private func startTimedDrawing() {
         view?.enableSetNeedsDisplay = false
@@ -304,9 +312,9 @@ public final class StarRenderer: NSObject {
         encoder.setVertexBytes(&uniforms, length: MemoryLayout<FrameUniforms>.stride, index: 1)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: instanceCount)
 
-        if let selectedStarID, catalog.stars.indices.contains(selectedStarID) {
+        if let selectedStarID, let selected = catalog.star(withID: selectedStarID) {
             var ring = StarInstance(
-                positionSize: SIMD4(catalog.stars[selectedStarID].position, 1),
+                positionSize: SIMD4(selected.position, 1),
                 color: SIMD4(selectionRingColor, 1)
             )
             var ringUniforms = uniforms

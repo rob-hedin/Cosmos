@@ -110,6 +110,20 @@ import Testing
         #expect(origin.y >= 28)
     }
 
+    @Test func pinnedLabelWithASelectionRingAvoidsTheControls() throws {
+        // As in the demo: the selection ring's radius is 14 pt.
+        let viewport = SIMD2<Float>(1000, 750)
+        let controls = LabelLayout.Rect(origin: SIMD2(686, 48), size: SIMD2(298, 40))
+        let pinned = LabelCandidate(id: 1, anchor: SIMD2(992, 43), radius: 14, size: size, priority: 0, isPinned: true)
+        let origin = try #require(
+            LabelLayout.place([pinned], in: viewport, insets: SIMD4(28, 0, 0, 0), avoiding: [controls], maxCount: 10).first
+        ).origin
+        let far = origin + size
+        let overlapsControls = origin.x < 984 && 686 < far.x && origin.y < 88 && 48 < far.y
+        #expect(!overlapsControls)
+        #expect(origin.y >= 28)
+    }
+
     @Test func pinnedLabelGoesFirstAndBlocksOthers() {
         var pinned = candidate(1, at: SIMD2(100, 100), priority: 50)
         pinned.isPinned = true

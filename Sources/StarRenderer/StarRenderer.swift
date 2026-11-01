@@ -53,6 +53,21 @@ public final class StarRenderer: NSObject {
     /// How quickly a fling slows down, per second. Higher stops sooner.
     public var spinDamping: Float = 3.5
 
+    /// The star drawn with a highlight ring, by `Star.id`.
+    public var selectedStarID: Star.ID? {
+        didSet { requestRedraw() }
+    }
+
+    /// Diameter of the selection ring, in points.
+    public var selectionRingDiameter: Float = 28 {
+        didSet { requestRedraw() }
+    }
+
+    /// Linear RGB of the selection ring.
+    public var selectionRingColor: SIMD3<Float> = SIMD3(0.25, 0.75, 1) {
+        didSet { requestRedraw() }
+    }
+
     public static let pixelFormat: MTLPixelFormat = .bgra8Unorm_srgb
 
     /// True while the view keeps turning after a fling.
@@ -60,12 +75,31 @@ public final class StarRenderer: NSObject {
         simd_length(spinVelocity) > 0.01
     }
 
+    /// True while the camera is gliding to a new target.
+    public var isFlying: Bool {
+        flight != nil
+    }
+
     /// Rotation that continues after a drag ends, in radians per second (screen convention).
     private var spinVelocity: SIMD2<Float> = .zero
     private var lastSpinTime: CFTimeInterval?
 
+    private struct Flight {
+        let fromTarget: SIMD3<Float>
+        let toTarget: SIMD3<Float>
+        let fromDistance: Float
+        let toDistance: Float
+        let start: CFTimeInterval
+        let duration: CFTimeInterval
+    }
+    private var flight: Flight?
+
+    /// Star positions in catalog order, for picking.
+    private let positions: [SIMD3<Float>]
+
     private let commandQueue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
+    private let ringPipeline: MTLRenderPipelineState
     private var instanceBuffer: MTLBuffer?
     private var instanceCount = 0
     private weak var view: MTKView?
@@ -76,29 +110,35 @@ public final class StarRenderer: NSObject {
         }
         self.device = device
         self.catalog = catalog
+        positions = catalog.stars.map(\.position)
         commandQueue = queue
 
         guard let library = try? device.makeDefaultLibrary(bundle: .module),
               let vertexFunction = library.makeFunction(name: "starVertex"),
-              let fragmentFunction = library.makeFunction(name: "starFragment")
+              let starFragment = library.makeFunction(name: "starFragment"),
+              let ringFragment = library.makeFunction(name: "ringFragment")
         else {
             throw StarRendererError.shaderLibraryMissing
         }
 
-        let descriptor = MTLRenderPipelineDescriptor()
-        descriptor.label = "Stars"
-        descriptor.vertexFunction = vertexFunction
-        descriptor.fragmentFunction = fragmentFunction
-        let attachment = descriptor.colorAttachments[0]!
-        attachment.pixelFormat = Self.pixelFormat
-        attachment.isBlendingEnabled = true
-        attachment.rgbBlendOperation = .add
-        attachment.alphaBlendOperation = .add
-        attachment.sourceRGBBlendFactor = .one
-        attachment.destinationRGBBlendFactor = .one
-        attachment.sourceAlphaBlendFactor = .one
-        attachment.destinationAlphaBlendFactor = .one
-        pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
+        func makePipeline(_ label: String, fragment: MTLFunction) throws -> MTLRenderPipelineState {
+            let descriptor = MTLRenderPipelineDescriptor()
+            descriptor.label = label
+            descriptor.vertexFunction = vertexFunction
+            descriptor.fragmentFunction = fragment
+            let attachment = descriptor.colorAttachments[0]!
+            attachment.pixelFormat = Self.pixelFormat
+            attachment.isBlendingEnabled = true
+            attachment.rgbBlendOperation = .add
+            attachment.alphaBlendOperation = .add
+            attachment.sourceRGBBlendFactor = .one
+            attachment.destinationRGBBlendFactor = .one
+            attachment.sourceAlphaBlendFactor = .one
+            attachment.destinationAlphaBlendFactor = .one
+            return try device.makeRenderPipelineState(descriptor: descriptor)
+        }
+        pipeline = try makePipeline("Stars", fragment: starFragment)
+        ringPipeline = try makePipeline("Selection ring", fragment: ringFragment)
 
         super.init()
         try rebuildInstances()
@@ -126,24 +166,86 @@ public final class StarRenderer: NSObject {
         #endif
     }
 
+    // MARK: Picking
+
+    /// The star under a point in the view (points from the top-left, y down), within `tolerance` points.
+    public func star(at point: CGPoint, viewSize: CGSize, tolerance: Float = 20) -> Star? {
+        StarPicker.nearest(
+            to: SIMD2(Float(point.x), Float(point.y)),
+            in: positions,
+            camera: camera,
+            viewportSize: SIMD2(Float(viewSize.width), Float(viewSize.height)),
+            maxDistance: tolerance
+        ).map { catalog.stars[$0] }
+    }
+
+    // MARK: Motion
+
     /// Keeps rotating at `angularVelocity` (radians per second, screen convention) after a drag,
     /// slowing to a stop. The view draws continuously only while spinning.
     public func fling(angularVelocity: SIMD2<Float>) {
         spinVelocity = angularVelocity
         lastSpinTime = nil
         guard isSpinning else { return stopSpinning() }
-        // Timed drawing: both flags off, per MTKView's documented modes.
-        view?.enableSetNeedsDisplay = false
-        view?.isPaused = false
+        startTimedDrawing()
     }
 
     public func stopSpinning() {
         spinVelocity = .zero
         lastSpinTime = nil
-        guard let view, !view.isPaused else { return }
+        stopTimedDrawingIfIdle()
+    }
+
+    /// Glides the camera so it orbits `target` from `distance` light years, keeping its orientation.
+    public func fly(to target: SIMD3<Float>, distance: Float, duration: CFTimeInterval = 0.8) {
+        spinVelocity = .zero
+        flight = Flight(
+            fromTarget: camera.target,
+            toTarget: target,
+            fromDistance: camera.distance,
+            toDistance: min(max(distance, OrbitCamera.distanceRange.lowerBound), OrbitCamera.distanceRange.upperBound),
+            start: CACurrentMediaTime(),
+            duration: max(duration, 0.01)
+        )
+        startTimedDrawing()
+    }
+
+    /// Stops any fling or flight where it is.
+    public func stopMotion() {
+        flight = nil
+        stopSpinning()
+    }
+
+    /// Stops a flight where it is, leaving any fling running.
+    public func cancelFlight() {
+        flight = nil
+        stopTimedDrawingIfIdle()
+    }
+
+    /// Timed drawing: both flags off, per MTKView's documented modes.
+    private func startTimedDrawing() {
+        view?.enableSetNeedsDisplay = false
+        view?.isPaused = false
+    }
+
+    private func stopTimedDrawingIfIdle() {
+        guard !isSpinning, flight == nil, let view, !view.isPaused else { return }
         view.isPaused = true
         view.enableSetNeedsDisplay = true
         requestRedraw()
+    }
+
+    private func advanceFlight() {
+        guard let flight else { return }
+        let progress = Float(min((CACurrentMediaTime() - flight.start) / flight.duration, 1))
+        let eased = progress * progress * (3 - 2 * progress)
+        camera.target = simd_mix(flight.fromTarget, flight.toTarget, SIMD3(repeating: eased))
+        // Interpolate distance in log space so zooming in feels even.
+        camera.distance = exp(log(flight.fromDistance) + (log(flight.toDistance) - log(flight.fromDistance)) * eased)
+        if progress >= 1 {
+            self.flight = nil
+            stopTimedDrawingIfIdle()
+        }
     }
 
     private func advanceSpin() {
@@ -182,6 +284,7 @@ public final class StarRenderer: NSObject {
     }
 
     private func render(in view: MTKView) {
+        advanceFlight()
         advanceSpin()
         guard let instanceBuffer,
               let passDescriptor = view.currentRenderPassDescriptor,
@@ -208,6 +311,22 @@ public final class StarRenderer: NSObject {
         encoder.setVertexBuffer(instanceBuffer, offset: 0, index: 0)
         encoder.setVertexBytes(&uniforms, length: MemoryLayout<FrameUniforms>.stride, index: 1)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: instanceCount)
+
+        if let selectedStarID, let selected = catalog.star(withID: selectedStarID) {
+            var ring = StarInstance(
+                positionSize: SIMD4(selected.position, 1),
+                color: SIMD4(selectionRingColor, 1)
+            )
+            var ringUniforms = uniforms
+            ringUniforms.minPointSize = selectionRingDiameter * pixelsPerPoint
+            ringUniforms.maxPointSize = ringUniforms.minPointSize
+            ringUniforms.exposure = 1
+            ringUniforms.saturation = 1
+            encoder.setRenderPipelineState(ringPipeline)
+            encoder.setVertexBytes(&ring, length: MemoryLayout<StarInstance>.stride, index: 0)
+            encoder.setVertexBytes(&ringUniforms, length: MemoryLayout<FrameUniforms>.stride, index: 1)
+            encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        }
         encoder.endEncoding()
 
         commandBuffer.present(drawable)

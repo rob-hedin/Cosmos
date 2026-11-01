@@ -17,9 +17,13 @@ public enum StarCatalogError: Error, Equatable {
 /// The full set of stars, loaded from the bundled CSV or any CSV with the same columns.
 public struct StarCatalog: Sendable, Equatable {
     public let stars: [Star]
+    private let indexByID: [Star.ID: Int]
 
+    /// Stars may come in any order, and their IDs need not match their positions (a filtered or
+    /// reordered catalog keeps the original IDs). If IDs repeat, the first star with an ID wins.
     public init(stars: [Star]) {
         self.stars = stars
+        indexByID = Dictionary(stars.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     /// The 11,975 stars within 200 light years that ship with the package.
@@ -96,7 +100,12 @@ public struct StarCatalog: Sendable, Equatable {
                 isNakedEye: fields[col.nakedEye] == "Yes"
             ))
         }
-        self.stars = stars
+        self.init(stars: stars)
+    }
+
+    /// The star with the given ID, wherever it sits in `stars`.
+    public func star(withID id: Star.ID) -> Star? {
+        indexByID[id].map { stars[$0] }
     }
 
     /// First star whose name matches, ignoring case and extra spaces.

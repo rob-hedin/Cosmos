@@ -4,22 +4,41 @@ import MetalKit
 import SwiftUI
 
 /// A SwiftUI view that renders a star catalog in 3D with Metal.
+///
+/// Click a star to select it; the selected star gets a highlight ring and, by default,
+/// an info card. Pass a `selection` binding to read or set the selection from your app.
 public struct StarFieldView: View {
     private let source: Result<StarCatalog, any Error>
     private let sizeMode: StarSizeMode
+    private let externalSelection: Binding<Star.ID?>?
+    private let showsInfoCard: Bool
 
     @State private var renderer: StarRenderer?
     @State private var failure: (any Error)?
+    @State private var internalSelection: Star.ID?
 
     /// Shows the bundled catalog of stars within 200 light years.
-    public init(sizeMode: StarSizeMode = .luminosity) {
+    public init(
+        sizeMode: StarSizeMode = .luminosity,
+        selection: Binding<Star.ID?>? = nil,
+        showsInfoCard: Bool = true
+    ) {
         self.source = Self.bundledCatalog
         self.sizeMode = sizeMode
+        self.externalSelection = selection
+        self.showsInfoCard = showsInfoCard
     }
 
-    public init(catalog: StarCatalog, sizeMode: StarSizeMode = .luminosity) {
+    public init(
+        catalog: StarCatalog,
+        sizeMode: StarSizeMode = .luminosity,
+        selection: Binding<Star.ID?>? = nil,
+        showsInfoCard: Bool = true
+    ) {
         self.source = .success(catalog)
         self.sizeMode = sizeMode
+        self.externalSelection = selection
+        self.showsInfoCard = showsInfoCard
     }
 
     /// Parsed once and shared, so recreating the view doesn't re-read the CSV.
@@ -27,6 +46,15 @@ public struct StarFieldView: View {
 
     private var catalog: StarCatalog? {
         try? source.get()
+    }
+
+    private var selection: Binding<Star.ID?> {
+        externalSelection ?? $internalSelection
+    }
+
+    private var selectedStar: Star? {
+        guard let id = selection.wrappedValue else { return nil }
+        return renderer?.catalog.star(withID: id)
     }
 
     public var body: some View {
@@ -38,21 +66,37 @@ public struct StarFieldView: View {
                     description: Text(String(describing: failure))
                 )
             } else if let renderer {
-                MetalStarView(renderer: renderer)
-                    .ignoresSafeArea()
+                MetalStarView(renderer: renderer) { star in
+                    selection.wrappedValue = star?.id
+                }
+                .ignoresSafeArea()
+                .overlay(alignment: .bottomLeading) {
+                    if showsInfoCard, let selectedStar {
+                        StarInfoCard(star: selectedStar) {
+                            selection.wrappedValue = nil
+                        }
+                        .padding()
+                    }
+                }
             } else {
                 Color.black.ignoresSafeArea()
             }
         }
         .onAppear(perform: makeRenderer)
-        .onChange(of: catalog) { makeRenderer() }
+        .onChange(of: catalog) {
+            // IDs from the old catalog mean nothing in the new one.
+            selection.wrappedValue = nil
+            makeRenderer()
+        }
         .onChange(of: sizeMode) { renderer?.sizeMode = sizeMode }
+        .onChange(of: selection.wrappedValue) { renderer?.selectedStarID = selection.wrappedValue }
     }
 
     private func makeRenderer() {
         do {
             let renderer = try StarRenderer(catalog: source.get())
             renderer.sizeMode = sizeMode
+            renderer.selectedStarID = selection.wrappedValue
             self.renderer = renderer
             failure = nil
         } catch {
@@ -65,16 +109,19 @@ public struct StarFieldView: View {
 /// Hosts an MTKView driven by a StarRenderer.
 struct MetalStarView {
     let renderer: StarRenderer
+    let onSelect: @MainActor (Star?) -> Void
 
     @MainActor
-    private func makeView() -> MTKView {
+    private func makeView() -> InteractiveStarView {
         let view = InteractiveStarView()
+        view.onSelect = onSelect
         renderer.attach(to: view)
         return view
     }
 
     @MainActor
-    private func update(_ view: MTKView) {
+    private func update(_ view: InteractiveStarView) {
+        view.onSelect = onSelect
         if view.delegate !== renderer {
             renderer.attach(to: view)
         }
@@ -83,12 +130,12 @@ struct MetalStarView {
 
 #if os(macOS)
 extension MetalStarView: NSViewRepresentable {
-    func makeNSView(context: Context) -> MTKView { makeView() }
-    func updateNSView(_ view: MTKView, context: Context) { update(view) }
+    func makeNSView(context: Context) -> InteractiveStarView { makeView() }
+    func updateNSView(_ view: InteractiveStarView, context: Context) { update(view) }
 }
 #else
 extension MetalStarView: UIViewRepresentable {
-    func makeUIView(context: Context) -> MTKView { makeView() }
-    func updateUIView(_ view: MTKView, context: Context) { update(view) }
+    func makeUIView(context: Context) -> InteractiveStarView { makeView() }
+    func updateUIView(_ view: InteractiveStarView, context: Context) { update(view) }
 }
 #endif

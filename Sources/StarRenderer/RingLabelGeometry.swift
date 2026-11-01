@@ -5,7 +5,8 @@ enum RingLabelGeometry {
     /// The point where a ring of `radius` crosses the horizontal screen line through the origin,
     /// on the right-hand side. That screen line, seen from `eye`, is the plane through the eye that
     /// contains the camera's `right` direction and the origin. Nil when the ring doesn't cross the
-    /// plane (it lies wholly above or below the line), or the crossing is behind the camera.
+    /// plane (it lies wholly above or below the line), or no crossing is both in front of the camera
+/// and right of the origin on screen.
     static func point(radius: Float, eye: SIMD3<Float>, right: SIMD3<Float>, forward: SIMD3<Float>) -> SIMD3<Float>? {
         let normal = simd_cross(right, -eye)
         let inPlane = SIMD2(normal.x, normal.y)
@@ -22,8 +23,12 @@ enum RingLabelGeometry {
             let v = point - eye
             return simd_dot(v, right) / simd_dot(v, forward)
         }
+        // Only crossings in front of the camera and right of the Sun (which must be in front too);
+        // from inside a ring there may be just one crossing in front, on either side.
+        guard simd_dot(-eye, forward) > 0 else { return nil }
+        let sunX = screenX(.zero)
         return crossings
-            .filter { simd_dot($0 - eye, forward) > 0 }
+            .filter { simd_dot($0 - eye, forward) > 0 && screenX($0) > sunX }
             .max { screenX($0) < screenX($1) }
     }
 }

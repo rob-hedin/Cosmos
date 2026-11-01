@@ -200,6 +200,17 @@ import Testing
         try check(camera)
     }
 
+    @Test func fromInsideARingNoCrossingLeftOfTheSunIsUsed() throws {
+        let eye = SIMD3<Float>(0, -10, 10)
+        let forward = simd_normalize(SIMD3<Float>(0, 1, -1))
+        let right = simd_normalize(SIMD3<Float>(0, -1, -1))
+        let point = RingLabelGeometry.point(radius: 50, eye: eye, right: right, forward: forward)
+        if let point {
+            let v = point - eye
+            #expect(simd_dot(v, right) / simd_dot(v, forward) > simd_dot(-eye, right) / simd_dot(-eye, forward))
+        }
+    }
+
     @Test func lookingStraightDownTheRingIsLabeledOnTheRight() {
         let point = RingLabelGeometry.point(
             radius: 50, eye: SIMD3(0, 0, 450), right: SIMD3(1, 0, 0), forward: SIMD3(0, 0, -1)

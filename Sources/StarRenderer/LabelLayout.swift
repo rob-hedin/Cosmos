@@ -128,20 +128,19 @@ public enum LabelLayout {
             }
 
             guard count < maxCount else { break }
-            var spots = [right]
-            if candidate.triesOtherSides {
-                let centerX = candidate.anchor.x - size.x / 2
-                spots += [
-                    SIMD2(candidate.anchor.x - candidate.radius - gap - size.x, top),
-                    SIMD2(centerX, candidate.anchor.y - candidate.radius - gap - size.y),
-                    SIMD2(centerX, candidate.anchor.y + candidate.radius + gap),
-                ]
-            }
-            let spot = spots.first { origin in
+            func isFree(_ origin: SIMD2<Float>) -> Bool {
                 let far = origin + size
                 return origin.x >= low.x && origin.y >= low.y && far.x <= high.x && far.y <= high.y
                     && !placed.contains { overlaps(origin, size, $0.placement.origin, $0.size) }
                     && !obstacles.contains { overlaps(origin, size, $0.origin, $0.size) }
+            }
+            var spot: SIMD2<Float>? = isFree(right) ? right : nil
+            if spot == nil, candidate.triesOtherSides {
+                let centerX = candidate.anchor.x - size.x / 2
+                let left = SIMD2(candidate.anchor.x - candidate.radius - gap - size.x, top)
+                let above = SIMD2(centerX, candidate.anchor.y - candidate.radius - gap - size.y)
+                let below = SIMD2(centerX, candidate.anchor.y + candidate.radius + gap)
+                spot = isFree(left) ? left : isFree(above) ? above : isFree(below) ? below : nil
             }
             if let spot {
                 placed.append((Placement(id: candidate.id, origin: spot), size))

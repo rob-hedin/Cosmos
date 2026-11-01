@@ -179,7 +179,7 @@ public struct StarFieldView: View {
         if let focus, let location = renderer.catalog.location(named: focus.star) {
             camera.center(on: location.position, span: Float(focus.span))
         } else if let route, let first = route.stops.first {
-            camera.fit(center: first.position, radius: Float(route.reachFromFirstStop))
+            camera.fit(center: first.position, containing: route.stops.map(\.position))
         } else {
             return
         }

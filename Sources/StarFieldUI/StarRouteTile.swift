@@ -23,6 +23,17 @@ struct StarRouteTile: View {
     let notFound: [String]
 
     var body: some View {
+        // Scrolls only when a long route won't fit in the space below any controls.
+        ViewThatFits(in: .vertical) {
+            content
+            ScrollView { content }
+                .scrollBounceBehavior(.basedOnSize)
+        }
+        .frame(maxWidth: 340, alignment: .leading)
+        .background(.regularMaterial, in: .rect(cornerRadius: 12))
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 6) {
             if route.stops.count == 1, let stop = route.stops.first {
                 Text(stop.name)
@@ -58,7 +69,6 @@ struct StarRouteTile: View {
         .padding(12)
         .frame(maxWidth: 340, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
-        .background(.regularMaterial, in: .rect(cornerRadius: 12))
     }
 
     static func format(_ lightYears: Double) -> String {

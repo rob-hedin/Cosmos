@@ -164,7 +164,8 @@ public final class StarRenderer: NSObject {
     }
 
     /// Color of the route's lines, markers and names.
-    public var routeColor: SIMD3<Float> = SIMD3(1, 0.62, 0.18) {
+    /// Magenta, to stand apart from the amber meridian rings and the cyan selection.
+    public var routeColor: SIMD3<Float> = SIMD3(1, 0.3, 0.8) {
         didSet { requestRedraw() }
     }
 
@@ -566,7 +567,10 @@ public final class StarRenderer: NSObject {
                 encoder.setFragmentBytes(&color, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
                 encoder.drawPrimitives(type: .lineStrip, vertexStart: 0, vertexCount: route.stops.count)
             }
-            for stop in route.stops {
+            // A stop visited twice gets one marker, and a marked Sun keeps just its own ring.
+            var marked = Set<SIMD3<Float>>()
+            for stop in route.stops where marked.insert(stop.position).inserted {
+                if stop.starID == nil, showsSunMarker { continue }
                 drawMarker(at: stop.position, diameter: Self.routeMarkerDiameter, color: routeColor * 0.8)
             }
         }
@@ -621,11 +625,13 @@ extension StarRenderer {
         }
 
         // The selected star always gets a label, even a catalog number.
+        var labeledSelection = false
         if let atlas, let id = selectedStarID, let star = catalog.star(withID: id), let anchor = project(star.position) {
             let source = atlas.entries[id] == nil ? labelAtlas(forSelected: star) ?? atlas : atlas
             if let entry = source.entries[id] {
                 add(entry, from: source.texture, color: SIMD4(selectionRingColor, 1), at: anchor,
                     radius: selectionRingDiameter / 2, priority: -.infinity, isPinned: true)
+                labeledSelection = true
             }
         }
 
@@ -652,10 +658,11 @@ extension StarRenderer {
         var routeStarIDs = Set<Star.ID>()
         if let route, let routeAtlas {
             let color = SIMD4(routeColor, 1)
-            for (index, stop) in route.stops.enumerated() {
+            var labeled = Set<SIMD3<Float>>()
+            for (index, stop) in route.stops.enumerated() where labeled.insert(stop.position).inserted {
                 if let id = stop.starID { routeStarIDs.insert(id) }
-                // The selected star and a marked Sun already have labels.
-                if stop.starID == nil ? showsSunMarker : stop.starID == selectedStarID { continue }
+                // A marked Sun and a labeled selection already have their names shown.
+                if stop.starID == nil ? showsSunMarker : labeledSelection && stop.starID == selectedStarID { continue }
                 guard let entry = routeAtlas.entries[index], let anchor = project(stop.position) else { continue }
                 add(entry, from: routeAtlas.texture, color: color, at: anchor,
                     radius: Self.routeMarkerDiameter / 2, priority: -1_500 + Float(index), triesOtherSides: true)

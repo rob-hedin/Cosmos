@@ -107,13 +107,27 @@ public struct OrbitCamera: Sendable, Equatable {
         distance = Self.clamped(span / 2 / tan(fieldOfView / 2))
     }
 
-    /// Centers the view on `point`, close enough that a sphere of `radius` light years around it
-    /// fits on screen from any angle, with `margin` to spare (1 is a tight fit). A zero radius
-    /// falls back to a span of `minimumSpan` light years.
-    public mutating func fit(center point: SIMD3<Float>, radius: Float, margin: Float = 1.15, minimumSpan: Float = 10) {
-        guard radius.isFinite, radius > 0 else { return center(on: point, span: minimumSpan) }
+    /// Centers the view on `point` and comes just close enough that every one of `points` is on
+    /// screen from the current direction, with `margin` to spare (1 is a tight fit). Fits within
+    /// the viewport's shorter side, so it holds for any aspect ratio. Never closer than a span of
+    /// `minimumSpan` light years, nor farther than `distanceRange` allows.
+    public mutating func fit(
+        center point: SIMD3<Float>, containing points: [SIMD3<Float>], margin: Float = 1.15, minimumSpan: Float = 10
+    ) {
+        let halfTan = tan(fieldOfView / 2)
+        let forward = simd_normalize(target - position)
+        let (right, up) = (self.right, self.up)
+        var needed = minimumSpan / 2 / halfTan
+        for p in points {
+            let offset = p - point
+            guard offset.x.isFinite, offset.y.isFinite, offset.z.isFinite else { continue }
+            let lateral = max(abs(simd_dot(offset, right)), abs(simd_dot(offset, up)))
+            let depth = simd_dot(offset, forward)
+            // On screen when lateral / (distance + depth) <= halfTan / margin, and in front of the eye.
+            needed = max(needed, lateral * margin / halfTan - depth, Self.distanceRange.lowerBound - depth)
+        }
         target = point
-        distance = Self.clamped(max(radius * margin / sin(fieldOfView / 2), minimumSpan / 2 / tan(fieldOfView / 2)))
+        distance = Self.clamped(needed)
     }
 
     private static func clamped(_ distance: Float) -> Float {

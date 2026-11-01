@@ -32,12 +32,14 @@ struct DemoOptions {
     var route: [String] = []
 
     init(arguments: [String]) {
+        /// The value after `flag`, unless it's missing or is another option.
         func value(after flag: String) -> String? {
             guard let index = arguments.firstIndex(of: flag), arguments.indices.contains(index + 1) else { return nil }
-            return arguments[index + 1]
+            let value = arguments[index + 1]
+            return value.hasPrefix("-") ? nil : value
         }
         if let star = value(after: "--star") {
-            let span = value(after: "--span").flatMap(Double.init).flatMap { $0 > 0 ? $0 : nil } ?? 20
+            let span = value(after: "--span").flatMap(Double.init).flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 20
             focus = StarFieldFocus(star: star, span: span)
         }
         if let list = value(after: "--route") {

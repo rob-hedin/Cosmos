@@ -107,7 +107,8 @@ public struct StarFieldView: View {
         .onChange(of: labelExclusions) { renderer?.labelExclusions = labelExclusions }
     }
 
-    /// The info card's and any overlaid controls' frames, in the star view's coordinates.
+    /// The info card's and any overlaid controls' frames, relative to the star view's safe-area frame
+    /// (which is what SwiftUI reports for it, even though the Metal view extends under the title bar).
     private var labelExclusions: [LabelLayout.Rect] {
         ([cardFrame].compactMap { $0 } + labelObstacles).map { frame in
             LabelLayout.Rect(

@@ -79,8 +79,9 @@ public final class StarRenderer: NSObject {
         didSet { requestRedraw() }
     }
 
-    /// Regions where labels must not go, in points from the view's top-left, such as an overlaid
-    /// info card. The view's safe area (a title bar or notch) is avoided as well.
+    /// Regions where labels must not go, such as an overlaid info card, in points from the top-left
+    /// of the view's safe area (below a title bar), which is where SwiftUI lays out overlays.
+    /// The safe area's edges are avoided as well.
     public var labelExclusions: [LabelLayout.Rect] = [] {
         didSet { if labelExclusions != oldValue { requestRedraw() } }
     }
@@ -464,7 +465,10 @@ extension StarRenderer {
             labelCandidates,
             in: viewport,
             insets: SIMD4(Float(insets.top), Float(insets.left), Float(insets.bottom), Float(insets.right)),
-            avoiding: labelExclusions,
+            avoiding: labelExclusions.map {
+                // The view itself extends under the title bar; shift into its coordinates.
+                LabelLayout.Rect(origin: $0.origin + SIMD2(Float(insets.left), Float(insets.top)), size: $0.size)
+            },
             maxCount: maxLabels
         )
         labelInstances.removeAll(keepingCapacity: true)

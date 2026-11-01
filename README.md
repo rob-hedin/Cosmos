@@ -52,7 +52,7 @@ On iPhone and iPad:
 
 `CosmosDemo` runs on macOS; on iOS, use `StarFieldScene()` or `StarFieldView()` in an app target.
 
-The controls at the top right turn star names and the reference rings on and off. The rings are 50, 100 and 200 ly from the Sun in three planes at right angles: the celestial equator (blue, labeled) and the two pole-to-pole planes through RA 0h/12h (green) and 6h/18h (amber). The controls also, switch star size between luminosity and estimated radius. The Sun is marked with a ring and a label. Names appear for named stars bright enough to see with the naked eye from the camera's position, brightest first, without overlapping; the selected star is always labeled.
+The controls at the top right turn star names and the reference rings on and off. The rings are 50, 100 and 200 ly from the Sun in three planes at right angles: the celestial equator (blue, labeled) and the two pole-to-pole planes through RA 0h/12h (green) and 6h/18h (amber). The controls also switch star size between luminosity and estimated radius. The Sun is marked with a ring and a label. Names appear for named stars bright enough to see with the naked eye from the camera's position, brightest first, without overlapping; the selected star is always labeled.
 
 To show stars in your own app, use `StarFieldScene()` as a scene, place `StarFieldView()` in your UI, or call `StarFieldWindow.open()` from AppKit.
 

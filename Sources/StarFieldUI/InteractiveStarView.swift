@@ -194,6 +194,10 @@ final class InteractiveStarView: MTKView, UIGestureRecognizerDelegate {
         delegate as? StarRenderer
     }
 
+    /// True once a second finger joins the touch sequence (a pinch, pan or roll begins), until the
+    /// next sequence starts. One-finger rotation stops, without flinging, while it's set.
+    private var isMultiTouch = false
+
     override init(frame frameRect: CGRect, device: MTLDevice?) {
         super.init(frame: frameRect, device: device)
         installGestures()
@@ -210,6 +214,7 @@ final class InteractiveStarView: MTKView, UIGestureRecognizerDelegate {
         let rotate = UIPanGestureRecognizer(target: self, action: #selector(rotate(_:)))
         rotate.maximumNumberOfTouches = 1
         rotate.allowedScrollTypesMask = []
+        rotate.delegate = self
 
         let pan = UIPanGestureRecognizer(target: self, action: #selector(pan(_:)))
         pan.minimumNumberOfTouches = 2
@@ -238,7 +243,8 @@ final class InteractiveStarView: MTKView, UIGestureRecognizerDelegate {
         }
     }
 
-    /// Pinch, roll and two-finger pan work together, like a map.
+    /// Every drag, pinch and roll can run together, so adding a second finger mid-drag hands over
+    /// to pinch, pan and roll; `isMultiTouch` keeps the one-finger rotation out of it.
     func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
@@ -251,60 +257,71 @@ final class InteractiveStarView: MTKView, UIGestureRecognizerDelegate {
     /// Any new touch stops a fling or a flight, so a finger on the screen holds the view still.
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         renderer?.stopMotion()
+        // Recognizers may hold back later touches from the view, so this reliably sees only the
+        // first finger of a sequence; the multi-touch recognizers set the flag when they begin.
+        isMultiTouch = (event?.touches(for: self)?.count ?? touches.count) > 1
         super.touchesBegan(touches, with: event)
     }
 
-    @objc private func rotate(_ recognizer: UIPanGestureRecognizer) {
-        guard let renderer else { return }
-        // A second finger turns the gesture into a pinch, pan or roll: drop the rotation without
-        // flinging (re-enabling cancels it), so the camera doesn't turn under a pinch.
-        if recognizer.numberOfTouches > 1 {
-            recognizer.isEnabled = false
-            recognizer.isEnabled = true
-            return
+    /// Called by the two-finger recognizers.
+    private func noteMultiTouch(_ recognizer: UIGestureRecognizer) {
+        if recognizer.state == .began {
+            isMultiTouch = true
         }
-        switch recognizer.state {
-        case .changed:
-            let delta = recognizer.translation(in: self)
-            recognizer.setTranslation(.zero, in: self)
-            renderer.camera.rotate(by: SIMD2(Float(delta.x), Float(delta.y)) * radiansPerPoint)
-        case .ended:
+    }
+
+    /// Movement since the last call, consumed so each update is a delta. Read in every state,
+    /// since a short gesture can go from began straight to ended.
+    private func takeTranslation(_ recognizer: UIPanGestureRecognizer) -> SIMD2<Float> {
+        let delta = recognizer.translation(in: self)
+        recognizer.setTranslation(.zero, in: self)
+        return SIMD2(Float(delta.x), Float(delta.y))
+    }
+
+    @objc private func rotate(_ recognizer: UIPanGestureRecognizer) {
+        guard let renderer, [.began, .changed, .ended].contains(recognizer.state) else { return }
+        let delta = takeTranslation(recognizer)
+        guard !isMultiTouch else { return }
+        renderer.camera.rotate(by: delta * radiansPerPoint)
+        if recognizer.state == .ended {
             // UIKit measures release speed itself, in points per second, independent of frame rate.
             let velocity = recognizer.velocity(in: self)
             renderer.fling(angularVelocity: SIMD2(Float(velocity.x), Float(velocity.y)) * radiansPerPoint)
-        default:
-            break
         }
     }
 
     @objc private func pan(_ recognizer: UIPanGestureRecognizer) {
-        guard recognizer.state == .changed, let renderer else { return }
-        let delta = recognizer.translation(in: self)
-        recognizer.setTranslation(.zero, in: self)
+        noteMultiTouch(recognizer)
+        guard let renderer, [.began, .changed, .ended].contains(recognizer.state) else { return }
+        let delta = takeTranslation(recognizer)
         renderer.cancelFlight()
-        renderer.camera.pan(byPoints: SIMD2(Float(delta.x), Float(delta.y)), viewportShortSide: shortSide)
+        renderer.camera.pan(byPoints: delta, viewportShortSide: shortSide)
     }
 
     @objc private func pinch(_ recognizer: UIPinchGestureRecognizer) {
-        guard recognizer.state == .changed, let renderer, recognizer.scale > 0 else { return }
+        noteMultiTouch(recognizer)
+        guard let renderer, [.began, .changed, .ended].contains(recognizer.state), recognizer.scale > 0 else { return }
         renderer.cancelFlight()
         renderer.camera.zoom(by: 1 / Float(recognizer.scale))
         recognizer.scale = 1
     }
 
     @objc private func roll(_ recognizer: UIRotationGestureRecognizer) {
-        guard recognizer.state == .changed, let renderer else { return }
+        noteMultiTouch(recognizer)
+        guard let renderer, [.began, .changed, .ended].contains(recognizer.state) else { return }
         // UIKit's rotation is clockwise-positive; the camera's roll is counterclockwise-positive.
         renderer.camera.roll(by: -Float(recognizer.rotation))
         recognizer.rotation = 0
     }
 
     @objc private func scroll(_ recognizer: UIPanGestureRecognizer) {
-        guard recognizer.state == .changed, let renderer else { return }
-        let delta = recognizer.translation(in: self)
-        recognizer.setTranslation(.zero, in: self)
-        renderer.cancelFlight()
-        renderer.camera.zoom(by: exp(-Float(delta.y) * 0.005))
+        guard let renderer, [.began, .changed, .ended].contains(recognizer.state) else { return }
+        // Pointer scrolling sends no touches, so stop a fling here rather than in touchesBegan.
+        if recognizer.state == .began {
+            renderer.stopMotion()
+        }
+        let delta = takeTranslation(recognizer)
+        renderer.camera.zoom(by: exp(-delta.y * 0.005))
     }
 
     @objc private func tap(_ recognizer: UITapGestureRecognizer) {
@@ -314,6 +331,8 @@ final class InteractiveStarView: MTKView, UIGestureRecognizerDelegate {
     @objc private func doubleTap(_ recognizer: UITapGestureRecognizer) {
         guard let renderer else { return }
         if let hit = star(at: recognizer.location(in: self)) {
+            // Select it too, as a double-click does on the Mac (its first click selects).
+            onSelect?(hit)
             renderer.fly(to: hit.position, distance: min(renderer.camera.distance, flyToDistance))
         } else {
             renderer.camera.reset()

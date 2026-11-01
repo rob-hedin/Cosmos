@@ -10,7 +10,7 @@ public struct OrbitCamera: Sendable, Equatable {
     public var distance: Float = 450
     /// Rotation from camera space (looking down -z, +y up) into world space.
     public var orientation: simd_quatf = OrbitCamera.northUp
-    /// Vertical field of view, in radians.
+    /// Field of view across the shorter side of the viewport (height in landscape, width in portrait), in radians.
     public var fieldOfView: Float = .pi / 3
     public var nearPlane: Float = 0.05
     public var farPlane: Float = 5_000
@@ -58,9 +58,11 @@ extension simd_float4x4 {
     }
 
     /// Right-handed perspective projection with Metal's 0...1 depth range.
+    /// The field of view spans the shorter side, so the same scene fits in landscape and portrait.
     static func perspective(fieldOfView: Float, aspectRatio: Float, near: Float, far: Float) -> simd_float4x4 {
-        let ys = 1 / tan(fieldOfView / 2)
-        let xs = ys / aspectRatio
+        let scale = 1 / tan(fieldOfView / 2)
+        let xs = aspectRatio >= 1 ? scale / aspectRatio : scale
+        let ys = aspectRatio >= 1 ? scale : scale * aspectRatio
         let zs = far / (near - far)
         return simd_float4x4(columns: (
             SIMD4(xs, 0, 0, 0),

@@ -15,12 +15,16 @@ public struct StarFieldScene: Scene {
     }
 
     public var body: some Scene {
+        #if os(macOS)
         WindowGroup(title) {
             StarFieldView()
                 .frame(minWidth: 480, minHeight: 360)
         }
-        #if os(macOS)
         .defaultSize(width: 1_000, height: 750)
+        #else
+        WindowGroup(title) {
+            StarFieldView()
+        }
         #endif
     }
 }
@@ -51,17 +55,27 @@ public enum StarFieldWindow {
         window.isReleasedWhenClosed = false
         window.center()
         window.makeKeyAndOrderFront(nil)
-        openWindows.insert(window)
-        _ = NotificationCenter.default.addObserver(
+        let id = ObjectIdentifier(window)
+        let closeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: window, queue: .main
-        ) { notification in
-            guard let closed = notification.object as? NSWindow else { return }
-            MainActor.assumeIsolated { _ = openWindows.remove(closed) }
+        ) { _ in
+            MainActor.assumeIsolated { windowWillClose(id) }
         }
+        openWindows[id] = OpenWindow(window: window, closeObserver: closeObserver)
         return window
     }
 
+    private struct OpenWindow {
+        let window: NSWindow
+        let closeObserver: any NSObjectProtocol
+    }
+
     /// Keeps windows alive while they are open.
-    private static var openWindows: Set<NSWindow> = []
+    private static var openWindows: [ObjectIdentifier: OpenWindow] = [:]
+
+    private static func windowWillClose(_ id: ObjectIdentifier) {
+        guard let closed = openWindows.removeValue(forKey: id) else { return }
+        NotificationCenter.default.removeObserver(closed.closeObserver)
+    }
 }
 #endif

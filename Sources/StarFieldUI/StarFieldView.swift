@@ -5,76 +5,90 @@ import SwiftUI
 
 /// A SwiftUI view that renders a star catalog in 3D with Metal.
 public struct StarFieldView: View {
-    private let catalog: Result<StarCatalog, any Error>
-    private var sizeMode: StarSizeMode
+    private let source: Result<StarCatalog, any Error>
+    private let sizeMode: StarSizeMode
+
+    @State private var renderer: StarRenderer?
+    @State private var failure: (any Error)?
 
     /// Shows the bundled catalog of stars within 200 light years.
     public init(sizeMode: StarSizeMode = .luminosity) {
-        self.catalog = Result { try StarCatalog.bundled() }
+        self.source = Self.bundledCatalog
         self.sizeMode = sizeMode
     }
 
     public init(catalog: StarCatalog, sizeMode: StarSizeMode = .luminosity) {
-        self.catalog = .success(catalog)
+        self.source = .success(catalog)
         self.sizeMode = sizeMode
     }
 
+    /// Parsed once and shared, so recreating the view doesn't re-read the CSV.
+    private static let bundledCatalog = Result { try StarCatalog.bundled() }
+
+    private var catalog: StarCatalog? {
+        try? source.get()
+    }
+
     public var body: some View {
-        switch catalog {
-        case .success(let catalog):
-            MetalStarView(catalog: catalog, sizeMode: sizeMode)
-                .ignoresSafeArea()
-        case .failure(let error):
-            ContentUnavailableView(
-                "Stars unavailable",
-                systemImage: "sparkles",
-                description: Text(String(describing: error))
-            )
+        Group {
+            if let failure {
+                ContentUnavailableView(
+                    "Stars unavailable",
+                    systemImage: "sparkles",
+                    description: Text(String(describing: failure))
+                )
+            } else if let renderer {
+                MetalStarView(renderer: renderer)
+                    .ignoresSafeArea()
+            } else {
+                Color.black.ignoresSafeArea()
+            }
+        }
+        .onAppear(perform: makeRenderer)
+        .onChange(of: catalog) { makeRenderer() }
+        .onChange(of: sizeMode) { renderer?.sizeMode = sizeMode }
+    }
+
+    private func makeRenderer() {
+        do {
+            let renderer = try StarRenderer(catalog: source.get())
+            renderer.sizeMode = sizeMode
+            self.renderer = renderer
+            failure = nil
+        } catch {
+            renderer = nil
+            failure = error
         }
     }
 }
 
 /// Hosts an MTKView driven by a StarRenderer.
 struct MetalStarView {
-    let catalog: StarCatalog
-    let sizeMode: StarSizeMode
-
-    final class Coordinator {
-        var renderer: StarRenderer?
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
+    let renderer: StarRenderer
 
     @MainActor
-    private func makeView(context: Context) -> MTKView {
+    private func makeView() -> MTKView {
         let view = MTKView()
-        do {
-            let renderer = try StarRenderer(catalog: catalog)
-            renderer.sizeMode = sizeMode
-            renderer.attach(to: view)
-            context.coordinator.renderer = renderer
-        } catch {
-            assertionFailure("StarRenderer failed to start: \(error)")
-        }
+        renderer.attach(to: view)
         return view
     }
 
     @MainActor
-    private func update(context: Context) {
-        context.coordinator.renderer?.sizeMode = sizeMode
+    private func update(_ view: MTKView) {
+        if view.delegate !== renderer {
+            renderer.attach(to: view)
+        }
     }
 }
 
 #if os(macOS)
 extension MetalStarView: NSViewRepresentable {
-    func makeNSView(context: Context) -> MTKView { makeView(context: context) }
-    func updateNSView(_ view: MTKView, context: Context) { update(context: context) }
+    func makeNSView(context: Context) -> MTKView { makeView() }
+    func updateNSView(_ view: MTKView, context: Context) { update(view) }
 }
 #else
 extension MetalStarView: UIViewRepresentable {
-    func makeUIView(context: Context) -> MTKView { makeView(context: context) }
-    func updateUIView(_ view: MTKView, context: Context) { update(context: context) }
+    func makeUIView(context: Context) -> MTKView { makeView() }
+    func updateUIView(_ view: MTKView, context: Context) { update(view) }
 }
 #endif

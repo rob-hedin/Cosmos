@@ -21,11 +21,12 @@ import Testing
         #expect(abs(p.x) < 1e-5)
     }
 
-    @Test func defaultViewFitsTheWholeCatalog() {
+    @Test(arguments: [1.0, 16.0 / 9.0, 480.0 / 750.0, 390.0 / 844.0] as [Float])
+    func defaultViewFitsTheWholeCatalog(aspect: Float) {
         let camera = OrbitCamera()
         for point: SIMD3<Float> in [[200, 0, 0], [-200, 0, 0], [0, 0, 200], [0, 0, -200]] {
-            let p = ndc(point, camera)
-            #expect(abs(p.x) <= 1 && abs(p.y) <= 1, "\(point) should be on screen")
+            let p = ndc(point, camera, aspect: aspect)
+            #expect(abs(p.x) <= 1 && abs(p.y) <= 1, "\(point) should be on screen at aspect \(aspect)")
         }
     }
 

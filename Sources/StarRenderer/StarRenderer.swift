@@ -91,6 +91,64 @@ public final class StarRenderer: NSObject {
         didSet { requestRedraw() }
     }
 
+    /// Draws circles around the Sun in the celestial equator's plane, labeled with their radius,
+    /// to give distances a scale.
+    public var showsReferenceRings = false {
+        didSet { requestRedraw() }
+    }
+
+    /// Radii of the reference rings, in light years.
+    public var referenceRingRadii: [Float] = [50, 100, 200] {
+        didSet {
+            guard referenceRingRadii != oldValue else { return }
+            rebuildReferenceRings()
+            overlayAtlas = Self.makeOverlayAtlas(device: device, radii: referenceRingRadii)
+            requestRedraw()
+        }
+    }
+
+    /// Which planes through the Sun get a set of reference rings. Only the equator's rings are labeled.
+    public var referenceRingPlanes: ReferenceRingPlanes = .equator {
+        didSet {
+            guard referenceRingPlanes != oldValue else { return }
+            rebuildReferenceRings()
+            requestRedraw()
+        }
+    }
+
+    /// Linear RGB of the reference rings and their labels.
+    public var referenceRingColor: SIMD3<Float> = SIMD3(0.07, 0.2, 0.55) {
+        didSet { requestRedraw() }
+    }
+
+    /// Linear RGB of the rings in the plane through RA 0h and 12h (x-z), dimmer than the equator's.
+    public var meridianXZRingColor: SIMD3<Float> = SIMD3(0.05, 0.3, 0.08) {
+        didSet { requestRedraw() }
+    }
+
+    /// Linear RGB of the rings in the plane through RA 6h and 18h (y-z), dimmer than the equator's.
+    public var meridianYZRingColor: SIMD3<Float> = SIMD3(0.3, 0.13, 0.01) {
+        didSet { requestRedraw() }
+    }
+
+    private func ringColor(for plane: ReferenceRingPlanes) -> SIMD3<Float> {
+        switch plane {
+        case .meridianXZ: meridianXZRingColor
+        case .meridianYZ: meridianYZRingColor
+        default: referenceRingColor
+        }
+    }
+
+    /// Marks the Sun with a small ring and a "Sun" label.
+    public var showsSunMarker = false {
+        didSet { requestRedraw() }
+    }
+
+    /// Linear RGB of the Sun marker.
+    public var sunMarkerColor: SIMD3<Float> = SIMD3(1, 0.78, 0.4) {
+        didSet { requestRedraw() }
+    }
+
     /// Linear RGB of the selection ring.
     public var selectionRingColor: SIMD3<Float> = SIMD3(0.25, 0.75, 1) {
         didSet { requestRedraw() }
@@ -141,13 +199,29 @@ public final class StarRenderer: NSObject {
     private let labelBufferPool = BufferPool()
     /// Per-frame label scratch storage, kept to avoid reallocating every frame.
     private var labelCandidates: [LabelCandidate] = []
-    private var labelOpacity: [Int: Float] = [:]
+    private var labelSources: [LabelSource] = []
     private var labelInstances: [LabelInstance] = []
 
     private let commandQueue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
     private let ringPipeline: MTLRenderPipelineState
     private let labelPipeline: MTLRenderPipelineState
+    private let linePipeline: MTLRenderPipelineState
+    /// One closed line strip per reference ring, back to back.
+    private var ringPointBuffer: MTLBuffer?
+    private static let ringSegments = 256
+    /// Labels for the Sun and the reference rings, under ids that no star uses.
+    private lazy var overlayAtlas: LabelAtlas? = Self.makeOverlayAtlas(device: device, radii: referenceRingRadii)
+    /// Keys into `overlayAtlas` only; layout uses its own candidate indices.
+    private static let sunLabelID = -1
+    private static func ringLabelID(_ index: Int) -> Int { -2 - index }
+
+    /// Where a label's text lives and how it's tinted.
+    private struct LabelSource {
+        let entry: LabelAtlas.Entry
+        let texture: MTLTexture
+        let color: SIMD4<Float>
+    }
     private var instanceBuffer: MTLBuffer?
     private var instanceCount = 0
     private weak var view: MTKView?
@@ -172,15 +246,19 @@ public final class StarRenderer: NSObject {
               let starFragment = library.makeFunction(name: "starFragment"),
               let ringFragment = library.makeFunction(name: "ringFragment"),
               let labelVertex = library.makeFunction(name: "labelVertex"),
-              let labelFragment = library.makeFunction(name: "labelFragment")
+              let labelFragment = library.makeFunction(name: "labelFragment"),
+              let lineVertex = library.makeFunction(name: "lineVertex"),
+              let lineFragment = library.makeFunction(name: "lineFragment")
         else {
             throw StarRendererError.shaderLibraryMissing
         }
 
-        func makePipeline(_ label: String, fragment: MTLFunction) throws -> MTLRenderPipelineState {
+        func makePipeline(
+            _ label: String, vertex: MTLFunction? = nil, fragment: MTLFunction
+        ) throws -> MTLRenderPipelineState {
             let descriptor = MTLRenderPipelineDescriptor()
             descriptor.label = label
-            descriptor.vertexFunction = vertexFunction
+            descriptor.vertexFunction = vertex ?? vertexFunction
             descriptor.fragmentFunction = fragment
             let attachment = descriptor.colorAttachments[0]!
             attachment.pixelFormat = Self.pixelFormat
@@ -195,6 +273,7 @@ public final class StarRenderer: NSObject {
         }
         pipeline = try makePipeline("Stars", fragment: starFragment)
         ringPipeline = try makePipeline("Selection ring", fragment: ringFragment)
+        linePipeline = try makePipeline("Reference rings", vertex: lineVertex, fragment: lineFragment)
 
         let labelDescriptor = MTLRenderPipelineDescriptor()
         labelDescriptor.label = "Labels"
@@ -211,6 +290,7 @@ public final class StarRenderer: NSObject {
 
         super.init()
         try rebuildInstances()
+        rebuildReferenceRings()
     }
 
     /// Configures a view for on-demand drawing and makes this renderer its delegate.
@@ -355,6 +435,37 @@ public final class StarRenderer: NSObject {
         instanceCount = instances.count
     }
 
+    private func rebuildReferenceRings() {
+        let segments = Self.ringSegments
+        var points: [SIMD4<Float>] = []
+        let planes = referenceRingPlanes.orderedPlanes
+        points.reserveCapacity(planes.count * referenceRingRadii.count * (segments + 1))
+        for plane in planes {
+            for radius in referenceRingRadii {
+                for step in 0...segments {
+                    let angle = Float(step) / Float(segments) * 2 * .pi
+                    let (a, b) = (radius * cos(angle), radius * sin(angle))
+                    switch plane {
+                    case .equator: points.append(SIMD4(a, b, 0, 1))
+                    case .meridianXZ: points.append(SIMD4(a, 0, b, 1))
+                    default: points.append(SIMD4(0, a, b, 1))
+                    }
+                }
+            }
+        }
+        ringPointBuffer = points.isEmpty ? nil : device.makeBuffer(
+            bytes: points, length: MemoryLayout<SIMD4<Float>>.stride * points.count, options: .storageModeShared
+        )
+        ringPointBuffer?.label = "Reference rings"
+    }
+
+    private static func makeOverlayAtlas(device: MTLDevice, radii: [Float]) -> LabelAtlas? {
+        let rings = radii.enumerated().map { index, radius in
+            (id: ringLabelID(index), text: "\(radius.formatted(.number.precision(.fractionLength(0...1)))) ly")
+        }
+        return LabelAtlas(device: device, labels: [(id: sunLabelID, text: "Sun")] + rings, width: 512)
+    }
+
     private func render(in view: MTKView) {
         advanceFlight()
         advanceSpin()
@@ -379,18 +490,31 @@ public final class StarRenderer: NSObject {
         )
 
         encoder.label = "Stars"
+        if showsReferenceRings, let ringPointBuffer {
+            encoder.setRenderPipelineState(linePipeline)
+            encoder.setVertexBuffer(ringPointBuffer, offset: 0, index: 0)
+            encoder.setVertexBytes(&uniforms, length: MemoryLayout<FrameUniforms>.stride, index: 1)
+            let perRing = Self.ringSegments + 1
+            let ringsPerPlane = referenceRingRadii.count
+            for (planeIndex, plane) in referenceRingPlanes.orderedPlanes.enumerated() {
+                var color = SIMD4(ringColor(for: plane), 1)
+                encoder.setFragmentBytes(&color, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
+                for ring in 0..<ringsPerPlane {
+                    let start = (planeIndex * ringsPerPlane + ring) * perRing
+                    encoder.drawPrimitives(type: .lineStrip, vertexStart: start, vertexCount: perRing)
+                }
+            }
+        }
+
         encoder.setRenderPipelineState(pipeline)
         encoder.setVertexBuffer(instanceBuffer, offset: 0, index: 0)
         encoder.setVertexBytes(&uniforms, length: MemoryLayout<FrameUniforms>.stride, index: 1)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: instanceCount)
 
-        if let selectedStarID, let selected = catalog.star(withID: selectedStarID) {
-            var ring = StarInstance(
-                positionSize: SIMD4(selected.position, 1),
-                color: SIMD4(selectionRingColor, 1)
-            )
+        func drawMarker(at position: SIMD3<Float>, diameter: Float, color: SIMD3<Float>) {
+            var ring = StarInstance(positionSize: SIMD4(position, 1), color: SIMD4(color, 1))
             var ringUniforms = uniforms
-            ringUniforms.minPointSize = selectionRingDiameter * pixelsPerPoint
+            ringUniforms.minPointSize = diameter * pixelsPerPoint
             ringUniforms.maxPointSize = ringUniforms.minPointSize
             ringUniforms.exposure = 1
             ringUniforms.saturation = 1
@@ -399,8 +523,14 @@ public final class StarRenderer: NSObject {
             encoder.setVertexBytes(&ringUniforms, length: MemoryLayout<FrameUniforms>.stride, index: 1)
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         }
+        if showsSunMarker {
+            drawMarker(at: .zero, diameter: Self.sunMarkerDiameter, color: sunMarkerColor * 0.7)
+        }
+        if let selectedStarID, let selected = catalog.star(withID: selectedStarID) {
+            drawMarker(at: selected.position, diameter: selectionRingDiameter, color: selectionRingColor)
+        }
 
-        if showsLabels {
+        if showsLabels || showsReferenceRings || showsSunMarker {
             drawLabels(with: encoder, commandBuffer: commandBuffer, in: view, pixelsPerPoint: pixelsPerPoint)
         }
         encoder.endEncoding()
@@ -413,54 +543,84 @@ public final class StarRenderer: NSObject {
 // MARK: Labels
 
 extension StarRenderer {
+    private static let sunMarkerDiameter: Float = 18
+
     /// Parsecs per light year, for apparent magnitude.
     private static let parsecsPerLightYear: Float = 1 / 3.261_56
 
     private func drawLabels(
         with encoder: MTLRenderCommandEncoder, commandBuffer: MTLCommandBuffer, in view: MTKView, pixelsPerPoint: Float
     ) {
-        guard let atlas = labelAtlas else { return }
         let viewport = SIMD2(Float(view.bounds.width), Float(view.bounds.height))
         guard viewport.x > 0, viewport.y > 0 else { return }
         let eye = camera.position
         let viewProjection = camera.viewProjection(aspectRatio: viewport.x / viewport.y)
+        let atlas = showsLabels ? labelAtlas : nil
+        let overlay = showsReferenceRings || showsSunMarker ? overlayAtlas : nil
 
+        // Candidates are identified to the layout by their index here, so star IDs (any Int) and
+        // the Sun and ring labels can never collide. `labelSources` runs parallel to `labelCandidates`.
         labelCandidates.removeAll(keepingCapacity: true)
-        labelOpacity.removeAll(keepingCapacity: true)
+        labelSources.removeAll(keepingCapacity: true)
+        func add(
+            _ entry: LabelAtlas.Entry, from texture: MTLTexture, color: SIMD4<Float>, at anchor: SIMD2<Float>,
+            radius: Float, priority: Float, isPinned: Bool = false, triesOtherSides: Bool = false
+        ) {
+            labelCandidates.append(LabelCandidate(
+                id: labelCandidates.count, anchor: anchor, radius: radius, size: entry.size, priority: priority,
+                isPinned: isPinned, triesOtherSides: triesOtherSides
+            ))
+            labelSources.append(LabelSource(entry: entry, texture: texture, color: color))
+        }
+        func project(_ position: SIMD3<Float>) -> SIMD2<Float>? {
+            camera.project(position, viewProjection: viewProjection, viewportSize: viewport)
+        }
 
         // The selected star always gets a label, even a catalog number.
-        var selectedEntry: (entry: LabelAtlas.Entry, texture: MTLTexture)?
-        if let id = selectedStarID, let star = catalog.star(withID: id),
-           let anchor = camera.project(star.position, viewProjection: viewProjection, viewportSize: viewport) {
-            if let entry = atlas.entries[id] {
-                selectedEntry = (entry, atlas.texture)
-            } else if let separate = labelAtlas(forSelected: star), let entry = separate.entries[id] {
-                selectedEntry = (entry, separate.texture)
-            }
-            if let selectedEntry {
-                labelCandidates.append(LabelCandidate(
-                    id: id, anchor: anchor, radius: selectionRingDiameter / 2,
-                    size: selectedEntry.entry.size, priority: -.infinity, isPinned: true
-                ))
+        if let atlas, let id = selectedStarID, let star = catalog.star(withID: id), let anchor = project(star.position) {
+            let source = atlas.entries[id] == nil ? labelAtlas(forSelected: star) ?? atlas : atlas
+            if let entry = source.entries[id] {
+                add(entry, from: source.texture, color: SIMD4(selectionRingColor, 1), at: anchor,
+                    radius: selectionRingDiameter / 2, priority: -.infinity, isPinned: true)
             }
         }
 
-        for index in namedStarIndices {
-            let star = catalog.stars[index]
-            guard star.id != selectedStarID else { continue }
-            // Cheap magnitude test first, so faint stars skip projection.
-            let parsecs = max(simd_distance(star.position, eye), 0.001) * Self.parsecsPerLightYear
-            let apparent = Float(star.absoluteMagnitude) + 5 * log10(parsecs) - 5
-            guard apparent <= labelMagnitudeLimit, let entry = atlas.entries[star.id],
-                  let anchor = camera.project(star.position, viewProjection: viewProjection, viewportSize: viewport)
-            else { continue }
-            labelCandidates.append(LabelCandidate(
-                id: star.id, anchor: anchor, radius: drawnDiameter(ofStarAt: index) / 2,
-                size: entry.size, priority: apparent
-            ))
-            // Fade labels that are close to the limit.
-            labelOpacity[star.id] = min(max((labelMagnitudeLimit - apparent) / 2, 0.45), 1)
+        // The Sun and ring labels go before any star's, and look for room on any side.
+        if let overlay {
+            if showsSunMarker, let entry = overlay.entries[Self.sunLabelID], let anchor = project(.zero) {
+                add(entry, from: overlay.texture, color: SIMD4(sunMarkerColor, 1), at: anchor,
+                    radius: Self.sunMarkerDiameter / 2, priority: -2_000, triesOtherSides: true)
+            }
+            // Only the equator's rings carry distance labels, so none when they aren't drawn.
+            if showsReferenceRings, referenceRingPlanes.contains(.equator) {
+                let color = SIMD4(simd_min(referenceRingColor * 2.2, SIMD3(repeating: 1)), 1)
+                for (index, radius) in referenceRingRadii.enumerated() {
+                    guard let entry = overlay.entries[Self.ringLabelID(index)],
+                          let point = ringLabelPoint(radius: radius), let anchor = project(point)
+                    else { continue }
+                    add(entry, from: overlay.texture, color: color, at: anchor,
+                        radius: 2, priority: -1_000 + Float(index), triesOtherSides: true)
+                }
+            }
         }
+
+        if let atlas {
+            for index in namedStarIndices {
+                let star = catalog.stars[index]
+                guard star.id != selectedStarID else { continue }
+                // Cheap magnitude test first, so faint stars skip projection.
+                let parsecs = max(simd_distance(star.position, eye), 0.001) * Self.parsecsPerLightYear
+                let apparent = Float(star.absoluteMagnitude) + 5 * log10(parsecs) - 5
+                guard apparent <= labelMagnitudeLimit, let entry = atlas.entries[star.id],
+                      let anchor = project(star.position)
+                else { continue }
+                // Fade labels that are close to the limit.
+                let opacity = min(max((labelMagnitudeLimit - apparent) / 2, 0.45), 1)
+                add(entry, from: atlas.texture, color: SIMD4(labelColor, opacity), at: anchor,
+                    radius: drawnDiameter(ofStarAt: index) / 2, priority: apparent)
+            }
+        }
+        guard !labelCandidates.isEmpty else { return }
 
         let insets = view.safeAreaInsets
         let placements = LabelLayout.place(
@@ -473,40 +633,48 @@ extension StarRenderer {
             },
             maxCount: maxLabels
         )
+
+        // Star names share one atlas and may be many; the few others are drawn one by one.
         labelInstances.removeAll(keepingCapacity: true)
-        var separateLabel: (instance: LabelInstance, texture: MTLTexture)?
+        var others: [(instance: LabelInstance, texture: MTLTexture)] = []
         for placement in placements {
-            let isSelected = placement.id == selectedStarID
-            guard let match = isSelected
-                ? selectedEntry
-                : atlas.entries[placement.id].map({ (entry: $0, texture: atlas.texture) })
-            else { continue }
-            let entry = match.entry
+            let source = labelSources[placement.id]
             let instance = LabelInstance(
-                rect: SIMD4(lowHalf: placement.origin * pixelsPerPoint, highHalf: entry.size * pixelsPerPoint),
-                uvRect: SIMD4(lowHalf: entry.uvOrigin, highHalf: entry.uvSize),
-                color: isSelected ? SIMD4(selectionRingColor, 1) : SIMD4(labelColor, labelOpacity[placement.id] ?? 1)
+                rect: SIMD4(lowHalf: placement.origin * pixelsPerPoint, highHalf: source.entry.size * pixelsPerPoint),
+                uvRect: SIMD4(lowHalf: source.entry.uvOrigin, highHalf: source.entry.uvSize),
+                color: source.color
             )
-            if match.texture === atlas.texture {
+            if let atlas, source.texture === atlas.texture {
                 labelInstances.append(instance)
             } else {
-                separateLabel = (instance, match.texture)
+                others.append((instance, source.texture))
             }
         }
 
         var drawableSize = SIMD2(Float(view.drawableSize.width), Float(view.drawableSize.height))
         encoder.setRenderPipelineState(labelPipeline)
         encoder.setVertexBytes(&drawableSize, length: MemoryLayout<SIMD2<Float>>.stride, index: 1)
-        if !labelInstances.isEmpty, bindLabelInstances(to: encoder, commandBuffer: commandBuffer) {
+        if let atlas, !labelInstances.isEmpty, bindLabelInstances(to: encoder, commandBuffer: commandBuffer) {
             encoder.setFragmentTexture(atlas.texture, index: 0)
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: labelInstances.count)
         }
-        if let separateLabel {
-            var instance = separateLabel.instance
+        for other in others {
+            var instance = other.instance
             encoder.setVertexBytes(&instance, length: MemoryLayout<LabelInstance>.stride, index: 0)
-            encoder.setFragmentTexture(separateLabel.texture, index: 0)
+            encoder.setFragmentTexture(other.texture, index: 0)
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         }
+    }
+
+    /// Where to label a reference ring: where it crosses the horizontal screen line through the
+    /// Sun, on the right, so the labels line up beside the Sun however the view is turned. That
+    /// line, seen from the eye, is the plane through the eye containing the screen's right
+    /// direction and the Sun. Nil when the ring doesn't cross it in front of the camera.
+    private func ringLabelPoint(radius: Float) -> SIMD3<Float>? {
+        RingLabelGeometry.point(
+            radius: radius, eye: camera.position, right: camera.right,
+            forward: simd_normalize(camera.target - camera.position)
+        )
     }
 
     /// Binds `labelInstances` at vertex index 0. setVertexBytes is limited to 4 KB, so larger sets go
@@ -586,5 +754,25 @@ private final class BufferPool: @unchecked Sendable {
             }
             buffers.append(handoff.buffer)
         }
+    }
+}
+
+/// Planes through the Sun for reference rings, in the equatorial frame (+z toward the north pole).
+public struct ReferenceRingPlanes: OptionSet, Sendable, Hashable {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+
+    /// The celestial equator's plane (x-y). Its rings carry the distance labels.
+    public static let equator = ReferenceRingPlanes(rawValue: 1 << 0)
+    /// The plane through the poles and RA 0h/12h (x-z).
+    public static let meridianXZ = ReferenceRingPlanes(rawValue: 1 << 1)
+    /// The plane through the poles and RA 6h/18h (y-z).
+    public static let meridianYZ = ReferenceRingPlanes(rawValue: 1 << 2)
+    /// All three, at right angles to each other.
+    public static let all: ReferenceRingPlanes = [.equator, .meridianXZ, .meridianYZ]
+
+    /// Each plane on its own, equator first.
+    var orderedPlanes: [ReferenceRingPlanes] {
+        [.equator, .meridianXZ, .meridianYZ].filter(contains)
     }
 }

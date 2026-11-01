@@ -14,9 +14,13 @@ public struct LabelCandidate: Sendable, Equatable {
     /// A pinned label (the selected star's) is always placed: it goes first, moves to the left of
     /// its star if the right side doesn't fit, and is kept inside the viewport as a last resort.
     public var isPinned: Bool
+    /// When the right side is taken, also try left, above and below before giving up (unpinned
+    /// labels only). Used for markers that should keep a label when there's room nearby.
+    public var triesOtherSides: Bool
 
     public init(
-        id: Int, anchor: SIMD2<Float>, radius: Float, size: SIMD2<Float>, priority: Float, isPinned: Bool = false
+        id: Int, anchor: SIMD2<Float>, radius: Float, size: SIMD2<Float>, priority: Float,
+        isPinned: Bool = false, triesOtherSides: Bool = false
     ) {
         self.id = id
         self.anchor = anchor
@@ -24,6 +28,7 @@ public struct LabelCandidate: Sendable, Equatable {
         self.size = size
         self.priority = priority
         self.isPinned = isPinned
+        self.triesOtherSides = triesOtherSides
     }
 }
 
@@ -123,13 +128,22 @@ public enum LabelLayout {
             }
 
             guard count < maxCount else { break }
-            let origin = right
-            let far = origin + size
-            guard origin.x >= low.x, origin.y >= low.y, far.x <= high.x, far.y <= high.y else { continue }
-            let blocked = placed.contains { overlaps(origin, size, $0.placement.origin, $0.size) }
-                || obstacles.contains { overlaps(origin, size, $0.origin, $0.size) }
-            if !blocked {
-                placed.append((Placement(id: candidate.id, origin: origin), size))
+            func isFree(_ origin: SIMD2<Float>) -> Bool {
+                let far = origin + size
+                return origin.x >= low.x && origin.y >= low.y && far.x <= high.x && far.y <= high.y
+                    && !placed.contains { overlaps(origin, size, $0.placement.origin, $0.size) }
+                    && !obstacles.contains { overlaps(origin, size, $0.origin, $0.size) }
+            }
+            var spot: SIMD2<Float>? = isFree(right) ? right : nil
+            if spot == nil, candidate.triesOtherSides {
+                let centerX = candidate.anchor.x - size.x / 2
+                let left = SIMD2(candidate.anchor.x - candidate.radius - gap - size.x, top)
+                let above = SIMD2(centerX, candidate.anchor.y - candidate.radius - gap - size.y)
+                let below = SIMD2(centerX, candidate.anchor.y + candidate.radius + gap)
+                spot = isFree(left) ? left : isFree(above) ? above : isFree(below) ? below : nil
+            }
+            if let spot {
+                placed.append((Placement(id: candidate.id, origin: spot), size))
                 count += 1
             }
         }

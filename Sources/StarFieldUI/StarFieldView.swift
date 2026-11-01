@@ -7,13 +7,15 @@ import SwiftUI
 ///
 /// Click a star to select it; the selected star gets a highlight ring and, by default,
 /// an info card. Pass a `selection` binding to read or set the selection from your app.
-/// Star names are shown by default; pass `showsLabels: false` to hide them.
+/// Star names and reference rings at 50, 100 and 200 ly are shown by default; pass
+/// `showsLabels: false` or `showsReferenceRings: false` to hide them. The Sun is always marked.
 public struct StarFieldView: View {
     private let source: Result<StarCatalog, any Error>
     private let sizeMode: StarSizeMode
     private let externalSelection: Binding<Star.ID?>?
     private let showsInfoCard: Bool
     private let showsLabels: Bool
+    private let showsReferenceRings: Bool
 
     @State private var renderer: StarRenderer?
     @State private var failure: (any Error)?
@@ -28,13 +30,15 @@ public struct StarFieldView: View {
         sizeMode: StarSizeMode = .luminosity,
         selection: Binding<Star.ID?>? = nil,
         showsInfoCard: Bool = true,
-        showsLabels: Bool = true
+        showsLabels: Bool = true,
+        showsReferenceRings: Bool = true
     ) {
         self.source = Self.bundledCatalog
         self.sizeMode = sizeMode
         self.externalSelection = selection
         self.showsInfoCard = showsInfoCard
         self.showsLabels = showsLabels
+        self.showsReferenceRings = showsReferenceRings
     }
 
     public init(
@@ -42,13 +46,15 @@ public struct StarFieldView: View {
         sizeMode: StarSizeMode = .luminosity,
         selection: Binding<Star.ID?>? = nil,
         showsInfoCard: Bool = true,
-        showsLabels: Bool = true
+        showsLabels: Bool = true,
+        showsReferenceRings: Bool = true
     ) {
         self.source = .success(catalog)
         self.sizeMode = sizeMode
         self.externalSelection = selection
         self.showsInfoCard = showsInfoCard
         self.showsLabels = showsLabels
+        self.showsReferenceRings = showsReferenceRings
     }
 
     /// Parsed once and shared, so recreating the view doesn't re-read the CSV.
@@ -103,6 +109,7 @@ public struct StarFieldView: View {
         }
         .onChange(of: sizeMode) { renderer?.sizeMode = sizeMode }
         .onChange(of: showsLabels) { renderer?.showsLabels = showsLabels }
+        .onChange(of: showsReferenceRings) { renderer?.showsReferenceRings = showsReferenceRings }
         .onChange(of: selection.wrappedValue) { renderer?.selectedStarID = selection.wrappedValue }
         .onChange(of: labelExclusions) { renderer?.labelExclusions = labelExclusions }
     }
@@ -123,6 +130,9 @@ public struct StarFieldView: View {
             let renderer = try StarRenderer(catalog: source.get())
             renderer.sizeMode = sizeMode
             renderer.showsLabels = showsLabels
+            renderer.showsReferenceRings = showsReferenceRings
+            renderer.referenceRingPlanes = .all
+            renderer.showsSunMarker = true
             renderer.selectedStarID = selection.wrappedValue
             renderer.labelExclusions = labelExclusions
             self.renderer = renderer

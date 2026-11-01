@@ -9,7 +9,7 @@ public struct OrbitCamera: Sendable, Equatable {
     /// Distance from the target, in light years.
     public var distance: Float = 450
     /// Rotation from camera space (looking down -z, +y up) into world space.
-    public var orientation: simd_quatf = OrbitCamera.northUp
+    public var orientation: simd_quatf = OrbitCamera.home
     /// Field of view across the shorter side of the viewport (height in landscape, width in portrait), in radians.
     public var fieldOfView: Float = .pi / 3
     public var nearPlane: Float = 0.05
@@ -17,6 +17,10 @@ public struct OrbitCamera: Sendable, Equatable {
 
     /// Looks at the target from the -y side, with the north celestial pole up.
     public static let northUp = simd_quatf(angle: .pi / 2, axis: SIMD3(1, 0, 0))
+
+    /// The default view: north up, tilted 25° to look down a little from the north, so circles in
+    /// the equator's plane (such as the reference rings) show as ellipses rather than a flat line.
+    public static let home = simd_normalize(northUp * simd_quatf(angle: -25 * .pi / 180, axis: SIMD3(1, 0, 0)))
 
     public init() {}
 

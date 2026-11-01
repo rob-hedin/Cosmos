@@ -75,6 +75,26 @@ fragment float4 ringFragment(StarVertexOut in [[stage_in]]) {
     return float4(in.color * ring, 1);
 }
 
+// MARK: Reference rings
+
+struct LineVertexOut {
+    float4 position [[position]];
+};
+
+/// Points of a line strip in light years (xyz; w unused).
+vertex LineVertexOut lineVertex(uint vertexID [[vertex_id]],
+                                const device float4 *points [[buffer(0)]],
+                                constant FrameUniforms &uniforms [[buffer(1)]]) {
+    LineVertexOut out;
+    out.position = uniforms.viewProjection * float4(points[vertexID].xyz, 1);
+    return out;
+}
+
+/// A flat linear color, added to what's there (rgb scaled by a).
+fragment float4 lineFragment(constant float4 &color [[buffer(0)]]) {
+    return float4(color.rgb * color.a, 1);
+}
+
 // MARK: Labels
 
 // Layout must match LabelInstance in ShaderTypes.swift.

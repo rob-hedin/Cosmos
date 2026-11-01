@@ -131,6 +131,14 @@ import Testing
         #expect(placed.map(\.id) == [1])
     }
 
+    @Test func aLabelThatTriesOtherSidesMovesLeftAtTheEdge() throws {
+        var marker = candidate(1, at: SIMD2(790, 300), priority: 0)
+        #expect(LabelLayout.place([marker], in: viewport, maxCount: 10).isEmpty)
+        marker.triesOtherSides = true
+        let origin = try #require(LabelLayout.place([marker], in: viewport, maxCount: 10).first).origin
+        #expect(origin == SIMD2(723, 292))
+    }
+
     @Test func respectsMaxCountInPriorityOrder() {
         let candidates = (0..<10).map { candidate($0, at: SIMD2(50, Float(30 + $0 * 40)), priority: Float(10 - $0)) }
         let placed = LabelLayout.place(candidates, in: viewport, maxCount: 3)
@@ -159,5 +167,54 @@ import Testing
         let long = try #require(atlas.entries[2])
         #expect(long.size.x > short.size.x)
         #expect(long.size.y == short.size.y)
+    }
+}
+
+@Suite struct RingLabelGeometryTests {
+    let viewport = SIMD2<Float>(800, 600)
+
+    private func check(_ camera: OrbitCamera) throws {
+        let sun = try #require(camera.project(.zero, viewportSize: viewport))
+        for radius: Float in [50, 100, 200] {
+            let point = try #require(RingLabelGeometry.point(
+                radius: radius, eye: camera.position, right: camera.right,
+                forward: simd_normalize(camera.target - camera.position)
+            ))
+            #expect(abs(simd_length(SIMD2(point.x, point.y)) - radius) < 1e-2)
+            #expect(abs(point.z) < 1e-4)
+            let onScreen = try #require(camera.project(point, viewportSize: viewport))
+            #expect(abs(onScreen.y - sun.y) < 0.05, "radius \(radius) should sit level with the Sun")
+            #expect(onScreen.x > sun.x)
+        }
+    }
+
+    @Test func labelsSitLevelWithTheSunByDefault() throws {
+        try check(OrbitCamera())
+    }
+
+    @Test func labelsSitLevelWithTheSunAfterTiltRollAndPan() throws {
+        var camera = OrbitCamera()
+        camera.rotate(by: SIMD2(0.7, -0.3))
+        camera.roll(by: 0.6)
+        camera.pan(byPoints: SIMD2(40, -25), viewportShortSide: 600)
+        try check(camera)
+    }
+
+    @Test func fromInsideARingNoCrossingLeftOfTheSunIsUsed() throws {
+        let eye = SIMD3<Float>(0, -10, 10)
+        let forward = simd_normalize(SIMD3<Float>(0, 1, -1))
+        let right = simd_normalize(SIMD3<Float>(0, -1, -1))
+        let point = RingLabelGeometry.point(radius: 50, eye: eye, right: right, forward: forward)
+        if let point {
+            let v = point - eye
+            #expect(simd_dot(v, right) / simd_dot(v, forward) > simd_dot(-eye, right) / simd_dot(-eye, forward))
+        }
+    }
+
+    @Test func lookingStraightDownTheRingIsLabeledOnTheRight() {
+        let point = RingLabelGeometry.point(
+            radius: 50, eye: SIMD3(0, 0, 450), right: SIMD3(1, 0, 0), forward: SIMD3(0, 0, -1)
+        )
+        #expect(point.map { abs($0.x - 50) < 1e-3 } == true)
     }
 }

@@ -37,6 +37,14 @@ import Testing
         #expect(abs(simd_distance(camera.position, camera.target) - 42) < 1e-4)
     }
 
+    @Test func defaultViewLooksDownSlightlyFromTheNorth() {
+        let camera = OrbitCamera()
+        #expect(camera.position.z > 0)
+        #expect(camera.position.y < 0)
+        // A point on the equator's plane in front of the Sun appears below it.
+        #expect(ndc(SIMD3(0, -100, 0), camera).y < 0)
+    }
+
     @Test func nearerPointsHaveSmallerDepth() {
         let camera = OrbitCamera()
         // The default camera sits on the -y side, so -y points are nearer.

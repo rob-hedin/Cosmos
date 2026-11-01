@@ -121,6 +121,24 @@ public final class StarRenderer: NSObject {
         didSet { requestRedraw() }
     }
 
+    /// Linear RGB of the rings in the plane through RA 0h and 12h (x-z), dimmer than the equator's.
+    public var meridianXZRingColor: SIMD3<Float> = SIMD3(0.1, 0.22, 0.13) {
+        didSet { requestRedraw() }
+    }
+
+    /// Linear RGB of the rings in the plane through RA 6h and 18h (y-z), dimmer than the equator's.
+    public var meridianYZRingColor: SIMD3<Float> = SIMD3(0.24, 0.16, 0.07) {
+        didSet { requestRedraw() }
+    }
+
+    private func ringColor(for plane: ReferenceRingPlanes) -> SIMD3<Float> {
+        switch plane {
+        case .meridianXZ: meridianXZRingColor
+        case .meridianYZ: meridianYZRingColor
+        default: referenceRingColor
+        }
+    }
+
     /// Marks the Sun with a small ring and a "Sun" label.
     public var showsSunMarker = false {
         didSet { requestRedraw() }
@@ -192,7 +210,6 @@ public final class StarRenderer: NSObject {
     /// One closed line strip per reference ring, back to back.
     private var ringPointBuffer: MTLBuffer?
     private static let ringSegments = 256
-    private var ringCount = 0
     /// Labels for the Sun and the reference rings, under ids that no star uses.
     private lazy var overlayAtlas: LabelAtlas? = Self.makeOverlayAtlas(device: device, radii: referenceRingRadii)
     /// Keys into `overlayAtlas` only; layout uses its own candidate indices.
@@ -436,7 +453,6 @@ public final class StarRenderer: NSObject {
                 }
             }
         }
-        ringCount = planes.count * referenceRingRadii.count
         ringPointBuffer = points.isEmpty ? nil : device.makeBuffer(
             bytes: points, length: MemoryLayout<SIMD4<Float>>.stride * points.count, options: .storageModeShared
         )
@@ -475,14 +491,18 @@ public final class StarRenderer: NSObject {
 
         encoder.label = "Stars"
         if showsReferenceRings, let ringPointBuffer {
-            var color = SIMD4(referenceRingColor, 1)
             encoder.setRenderPipelineState(linePipeline)
             encoder.setVertexBuffer(ringPointBuffer, offset: 0, index: 0)
             encoder.setVertexBytes(&uniforms, length: MemoryLayout<FrameUniforms>.stride, index: 1)
-            encoder.setFragmentBytes(&color, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
             let perRing = Self.ringSegments + 1
-            for index in 0..<ringCount {
-                encoder.drawPrimitives(type: .lineStrip, vertexStart: index * perRing, vertexCount: perRing)
+            let ringsPerPlane = referenceRingRadii.count
+            for (planeIndex, plane) in referenceRingPlanes.orderedPlanes.enumerated() {
+                var color = SIMD4(ringColor(for: plane), 1)
+                encoder.setFragmentBytes(&color, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
+                for ring in 0..<ringsPerPlane {
+                    let start = (planeIndex * ringsPerPlane + ring) * perRing
+                    encoder.drawPrimitives(type: .lineStrip, vertexStart: start, vertexCount: perRing)
+                }
             }
         }
 

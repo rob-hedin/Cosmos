@@ -59,6 +59,7 @@ import Testing
         #expect(Star.tidyName("Kaus Australis") == "Kaus Australis")
         #expect(Star.tidyName("Alya B") == "Alya B")
         #expect(Star.tidyName("HD 126170") == "HD 126170")
+        #expect(Star.tidyName("Taurus") == "Taurus")
     }
 
     @Test func packedNamesCanBeLookedUpEitherWay() throws {

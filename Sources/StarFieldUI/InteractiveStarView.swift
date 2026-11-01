@@ -164,8 +164,169 @@ final class InteractiveStarView: MTKView {
     }
 }
 #else
-/// Touch gestures arrive in a later milestone; for now the iOS view is a plain MTKView.
-final class InteractiveStarView: MTKView {
+import UIKit
+
+/// An MTKView that turns touch, Pencil and iPad pointer input into camera moves.
+///
+/// | Action | Input |
+/// | --- | --- |
+/// | Rotate | One-finger drag (keeps spinning briefly if released while moving) |
+/// | Zoom | Pinch, or scroll with a trackpad or mouse |
+/// | Pan | Two-finger drag |
+/// | Roll | Two-finger rotate |
+/// | Select | Tap a star (tap empty space to deselect) |
+/// | Fly to a star | Double-tap it |
+/// | Reset | Double-tap empty space |
+final class InteractiveStarView: MTKView, UIGestureRecognizerDelegate {
+    /// Rotation per point dragged, in radians.
+    var radiansPerPoint: Float = 0.006
+
+    /// Called when a tap selects a star, or with nil when a tap lands on empty space.
     var onSelect: (@MainActor (Star?) -> Void)?
+
+    /// Distance to orbit a star from after double-tapping it, in light years.
+    var flyToDistance: Float = 20
+
+    /// Fingers get a little more room than a pointer when picking a star.
+    var touchTolerance: Float = 28
+
+    private var renderer: StarRenderer? {
+        delegate as? StarRenderer
+    }
+
+    override init(frame frameRect: CGRect, device: MTLDevice?) {
+        super.init(frame: frameRect, device: device)
+        installGestures()
+    }
+
+    required init(coder: NSCoder) {
+        super.init(coder: coder)
+        installGestures()
+    }
+
+    private func installGestures() {
+        isMultipleTouchEnabled = true
+
+        let rotate = UIPanGestureRecognizer(target: self, action: #selector(rotate(_:)))
+        rotate.maximumNumberOfTouches = 1
+        rotate.allowedScrollTypesMask = []
+
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(pan(_:)))
+        pan.minimumNumberOfTouches = 2
+        pan.allowedScrollTypesMask = []
+        pan.delegate = self
+
+        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinch(_:)))
+        pinch.delegate = self
+
+        let roll = UIRotationGestureRecognizer(target: self, action: #selector(roll(_:)))
+        roll.delegate = self
+
+        // Trackpad and mouse-wheel scrolling on iPad; no touches, so it never fights the drags.
+        let scroll = UIPanGestureRecognizer(target: self, action: #selector(scroll(_:)))
+        scroll.allowedScrollTypesMask = .all
+        scroll.allowedTouchTypes = []
+
+        let doubleTap = UITapGestureRecognizer(target: self, action: #selector(doubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+
+        let tap = UITapGestureRecognizer(target: self, action: #selector(tap(_:)))
+        tap.require(toFail: doubleTap)
+
+        for recognizer in [rotate, pan, pinch, roll, scroll, doubleTap, tap] {
+            addGestureRecognizer(recognizer)
+        }
+    }
+
+    /// Pinch, roll and two-finger pan work together, like a map.
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool {
+        gestureRecognizer.delegate === self && other.delegate === self
+    }
+
+    // MARK: Touches
+
+    /// Any new touch stops a fling or a flight, so a finger on the screen holds the view still.
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        renderer?.stopMotion()
+        super.touchesBegan(touches, with: event)
+    }
+
+    @objc private func rotate(_ recognizer: UIPanGestureRecognizer) {
+        guard let renderer else { return }
+        // A second finger turns the gesture into a pinch, pan or roll: drop the rotation without
+        // flinging (re-enabling cancels it), so the camera doesn't turn under a pinch.
+        if recognizer.numberOfTouches > 1 {
+            recognizer.isEnabled = false
+            recognizer.isEnabled = true
+            return
+        }
+        switch recognizer.state {
+        case .changed:
+            let delta = recognizer.translation(in: self)
+            recognizer.setTranslation(.zero, in: self)
+            renderer.camera.rotate(by: SIMD2(Float(delta.x), Float(delta.y)) * radiansPerPoint)
+        case .ended:
+            // UIKit measures release speed itself, in points per second, independent of frame rate.
+            let velocity = recognizer.velocity(in: self)
+            renderer.fling(angularVelocity: SIMD2(Float(velocity.x), Float(velocity.y)) * radiansPerPoint)
+        default:
+            break
+        }
+    }
+
+    @objc private func pan(_ recognizer: UIPanGestureRecognizer) {
+        guard recognizer.state == .changed, let renderer else { return }
+        let delta = recognizer.translation(in: self)
+        recognizer.setTranslation(.zero, in: self)
+        renderer.cancelFlight()
+        renderer.camera.pan(byPoints: SIMD2(Float(delta.x), Float(delta.y)), viewportShortSide: shortSide)
+    }
+
+    @objc private func pinch(_ recognizer: UIPinchGestureRecognizer) {
+        guard recognizer.state == .changed, let renderer, recognizer.scale > 0 else { return }
+        renderer.cancelFlight()
+        renderer.camera.zoom(by: 1 / Float(recognizer.scale))
+        recognizer.scale = 1
+    }
+
+    @objc private func roll(_ recognizer: UIRotationGestureRecognizer) {
+        guard recognizer.state == .changed, let renderer else { return }
+        // UIKit's rotation is clockwise-positive; the camera's roll is counterclockwise-positive.
+        renderer.camera.roll(by: -Float(recognizer.rotation))
+        recognizer.rotation = 0
+    }
+
+    @objc private func scroll(_ recognizer: UIPanGestureRecognizer) {
+        guard recognizer.state == .changed, let renderer else { return }
+        let delta = recognizer.translation(in: self)
+        recognizer.setTranslation(.zero, in: self)
+        renderer.cancelFlight()
+        renderer.camera.zoom(by: exp(-Float(delta.y) * 0.005))
+    }
+
+    @objc private func tap(_ recognizer: UITapGestureRecognizer) {
+        onSelect?(star(at: recognizer.location(in: self)))
+    }
+
+    @objc private func doubleTap(_ recognizer: UITapGestureRecognizer) {
+        guard let renderer else { return }
+        if let hit = star(at: recognizer.location(in: self)) {
+            renderer.fly(to: hit.position, distance: min(renderer.camera.distance, flyToDistance))
+        } else {
+            renderer.camera.reset()
+        }
+    }
+
+    private var shortSide: Float {
+        Float(min(bounds.width, bounds.height))
+    }
+
+    /// The star under a point in the view (top-left origin, as UIKit uses).
+    private func star(at point: CGPoint) -> Star? {
+        renderer?.star(at: point, viewSize: bounds.size, tolerance: touchTolerance)
+    }
 }
 #endif

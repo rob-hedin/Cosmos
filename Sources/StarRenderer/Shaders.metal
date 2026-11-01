@@ -74,3 +74,40 @@ fragment float4 ringFragment(StarVertexOut in [[stage_in]]) {
     }
     return float4(in.color * ring, 1);
 }
+
+// MARK: Labels
+
+// Layout must match LabelInstance in ShaderTypes.swift.
+struct LabelInstance {
+    float4 rect;     // x, y, width, height in drawable pixels, from the top-left
+    float4 uvRect;   // u, v, width, height in the atlas
+    float4 color;    // rgb: linear color, a: opacity
+};
+
+struct LabelVertexOut {
+    float4 position [[position]];
+    float2 uv;
+    float4 color;
+};
+
+vertex LabelVertexOut labelVertex(uint vertexID [[vertex_id]],
+                                  uint instanceID [[instance_id]],
+                                  const device LabelInstance *labels [[buffer(0)]],
+                                  constant float2 &viewportSize [[buffer(1)]]) {
+    LabelInstance label = labels[instanceID];
+    float2 unit = (corners[vertexID] + 1.0) * 0.5;   // 0...1, y down
+    float2 pixel = label.rect.xy + unit * label.rect.zw;
+
+    LabelVertexOut out;
+    out.position = float4(pixel.x / viewportSize.x * 2.0 - 1.0, 1.0 - pixel.y / viewportSize.y * 2.0, 0, 1);
+    out.uv = label.uvRect.xy + unit * label.uvRect.zw;
+    out.color = label.color;
+    return out;
+}
+
+fragment float4 labelFragment(LabelVertexOut in [[stage_in]],
+                              texture2d<float> atlas [[texture(0)]]) {
+    constexpr sampler linearSampler(filter::linear, address::clamp_to_edge);
+    float coverage = atlas.sample(linearSampler, in.uv).r * in.color.a;
+    return float4(in.color.rgb * coverage, coverage);   // premultiplied
+}

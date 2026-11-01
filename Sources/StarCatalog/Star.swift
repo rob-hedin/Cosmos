@@ -46,6 +46,22 @@ public struct Star: Sendable, Hashable, Identifiable {
 
     private static let catalogPrefixes: Set<String> = ["HD", "HIP", "GJ", "Gl", "HR"]
 
+    /// Collapses runs of spaces and spells out the catalog's packed Bayer and Flamsteed names:
+    /// "20Gam Her" becomes "20 Gam Her", "44Rho1Sgr" becomes "44 Rho1 Sgr" and "14Mu  PsA" "14 Mu PsA".
+    static func tidyName(_ name: String) -> String {
+        let collapsed = name.split(separator: " ").joined(separator: " ")
+        guard let match = collapsed.wholeMatch(of: bayerFlamsteed) else { return collapsed }
+        let number = match.output[1].substring.map(String.init)
+        let greek = String(match.output[2].substring ?? "") + String(match.output[3].substring ?? "")
+        let constellation = String(match.output[4].substring ?? "")
+        return [number, greek, constellation].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
+    // Case-sensitive, so a proper name such as "Taurus" isn't mistaken for "Tau rus".
+    nonisolated(unsafe) private static let bayerFlamsteed = try! Regex(
+        #"(\d+)? ?(Alp|Bet|Gam|Del|Eps|Zet|Eta|The|Iot|Kap|Lam|Mu|Nu|Xi|Omi|Pi|Rho|Sig|Tau|Ups|Phi|Chi|Psi|Ome) ?(\d)? ?([A-Z][A-Za-z]{2})"#
+    )
+
     public init(
         id: Int,
         name: String,
@@ -63,7 +79,7 @@ public struct Star: Sendable, Hashable, Identifiable {
         isNakedEye: Bool = false
     ) {
         self.id = id
-        self.name = name.split(separator: " ").joined(separator: " ")
+        self.name = Self.tidyName(name)
         self.hipparcosID = hipparcosID
         self.henryDraperID = henryDraperID
         self.constellation = constellation

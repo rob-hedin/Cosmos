@@ -7,38 +7,47 @@ import SwiftUI
 ///
 /// Click a star to select it; the selected star gets a highlight ring and, by default,
 /// an info card. Pass a `selection` binding to read or set the selection from your app.
+/// Star names are shown by default; pass `showsLabels: false` to hide them.
 public struct StarFieldView: View {
     private let source: Result<StarCatalog, any Error>
     private let sizeMode: StarSizeMode
     private let externalSelection: Binding<Star.ID?>?
     private let showsInfoCard: Bool
+    private let showsLabels: Bool
 
     @State private var renderer: StarRenderer?
     @State private var failure: (any Error)?
     @State private var internalSelection: Star.ID?
+    /// Global frames of the star view and the info card, so labels can keep clear of the card.
+    @State private var starViewFrame: CGRect = .zero
+    @State private var cardFrame: CGRect?
 
     /// Shows the bundled catalog of stars within 200 light years.
     public init(
         sizeMode: StarSizeMode = .luminosity,
         selection: Binding<Star.ID?>? = nil,
-        showsInfoCard: Bool = true
+        showsInfoCard: Bool = true,
+        showsLabels: Bool = true
     ) {
         self.source = Self.bundledCatalog
         self.sizeMode = sizeMode
         self.externalSelection = selection
         self.showsInfoCard = showsInfoCard
+        self.showsLabels = showsLabels
     }
 
     public init(
         catalog: StarCatalog,
         sizeMode: StarSizeMode = .luminosity,
         selection: Binding<Star.ID?>? = nil,
-        showsInfoCard: Bool = true
+        showsInfoCard: Bool = true,
+        showsLabels: Bool = true
     ) {
         self.source = .success(catalog)
         self.sizeMode = sizeMode
         self.externalSelection = selection
         self.showsInfoCard = showsInfoCard
+        self.showsLabels = showsLabels
     }
 
     /// Parsed once and shared, so recreating the view doesn't re-read the CSV.
@@ -70,11 +79,14 @@ public struct StarFieldView: View {
                     selection.wrappedValue = star?.id
                 }
                 .ignoresSafeArea()
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { starViewFrame = $0 }
                 .overlay(alignment: .bottomLeading) {
                     if showsInfoCard, let selectedStar {
                         StarInfoCard(star: selectedStar) {
                             selection.wrappedValue = nil
                         }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { cardFrame = $0 }
+                        .onDisappear { cardFrame = nil }
                         .padding()
                     }
                 }
@@ -89,14 +101,27 @@ public struct StarFieldView: View {
             makeRenderer()
         }
         .onChange(of: sizeMode) { renderer?.sizeMode = sizeMode }
+        .onChange(of: showsLabels) { renderer?.showsLabels = showsLabels }
         .onChange(of: selection.wrappedValue) { renderer?.selectedStarID = selection.wrappedValue }
+        .onChange(of: labelExclusions) { renderer?.labelExclusions = labelExclusions }
+    }
+
+    /// The info card's frame in the star view's coordinates.
+    private var labelExclusions: [LabelLayout.Rect] {
+        guard let cardFrame else { return [] }
+        return [LabelLayout.Rect(
+            origin: SIMD2(Float(cardFrame.minX - starViewFrame.minX), Float(cardFrame.minY - starViewFrame.minY)),
+            size: SIMD2(Float(cardFrame.width), Float(cardFrame.height))
+        )]
     }
 
     private func makeRenderer() {
         do {
             let renderer = try StarRenderer(catalog: source.get())
             renderer.sizeMode = sizeMode
+            renderer.showsLabels = showsLabels
             renderer.selectedStarID = selection.wrappedValue
+            renderer.labelExclusions = labelExclusions
             self.renderer = renderer
             failure = nil
         } catch {

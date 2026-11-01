@@ -46,7 +46,16 @@ public struct OrbitCamera: Sendable, Equatable {
     /// Returns nil for points behind the camera or outside the near and far planes.
     public func project(_ point: SIMD3<Float>, viewportSize: SIMD2<Float>) -> SIMD2<Float>? {
         guard viewportSize.x > 0, viewportSize.y > 0 else { return nil }
-        let clip = viewProjection(aspectRatio: viewportSize.x / viewportSize.y) * SIMD4(point, 1)
+        return project(point, viewProjection: viewProjection(aspectRatio: viewportSize.x / viewportSize.y), viewportSize: viewportSize)
+    }
+
+    /// Like `project(_:viewportSize:)`, with the view-projection matrix computed once by the caller
+    /// (from `viewProjection(aspectRatio:)` for the same viewport) so many points can share it.
+    public func project(
+        _ point: SIMD3<Float>, viewProjection: simd_float4x4, viewportSize: SIMD2<Float>
+    ) -> SIMD2<Float>? {
+        guard viewportSize.x > 0, viewportSize.y > 0 else { return nil }
+        let clip = viewProjection * SIMD4(point, 1)
         guard clip.w > nearPlane, clip.w < farPlane else { return nil }
         let ndc = SIMD2(clip.x, clip.y) / clip.w
         return SIMD2((ndc.x + 1) / 2 * viewportSize.x, (1 - ndc.y) / 2 * viewportSize.y)

@@ -110,8 +110,13 @@ public struct StarCatalog: Sendable, Equatable {
 
     /// First star whose name matches, ignoring case and extra spaces.
     public func star(named name: String) -> Star? {
-        let wanted = name.split(separator: " ").joined(separator: " ")
-        return stars.first { $0.name.caseInsensitiveCompare(wanted) == .orderedSame }
+        let wanted = Star.tidyName(name)
+        if let exact = stars.first(where: { $0.name.caseInsensitiveCompare(wanted) == .orderedSame }) {
+            return exact
+        }
+        // Ignore spacing too, so "20gam her" and "20Gam Her" both find "20 Gam Her".
+        let squeezed = wanted.filter { $0 != " " }
+        return stars.first { $0.name.filter { $0 != " " }.caseInsensitiveCompare(squeezed) == .orderedSame }
     }
 
     /// A size in 0...1 for every star, in `stars` order. Sizes scale with the logarithm of the

@@ -68,7 +68,7 @@ struct MetalStarView {
 
     @MainActor
     private func makeView() -> MTKView {
-        let view = MTKView()
+        let view = InteractiveStarView()
         renderer.attach(to: view)
         return view
     }

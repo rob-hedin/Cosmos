@@ -1,6 +1,8 @@
 import Foundation
 import Metal
 import MetalKit
+import QuartzCore
+import simd
 import StarCatalog
 
 public enum StarRendererError: Error {
@@ -48,7 +50,19 @@ public final class StarRenderer: NSObject {
         didSet { requestRedraw() }
     }
 
+    /// How quickly a fling slows down, per second. Higher stops sooner.
+    public var spinDamping: Float = 3.5
+
     public static let pixelFormat: MTLPixelFormat = .bgra8Unorm_srgb
+
+    /// True while the view keeps turning after a fling.
+    public var isSpinning: Bool {
+        simd_length(spinVelocity) > 0.01
+    }
+
+    /// Rotation that continues after a drag ends, in radians per second (screen convention).
+    private var spinVelocity: SIMD2<Float> = .zero
+    private var lastSpinTime: CFTimeInterval?
 
     private let commandQueue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
@@ -103,11 +117,45 @@ public final class StarRenderer: NSObject {
     }
 
     public func requestRedraw() {
+        // While spinning the view draws every frame on its own timer.
+        guard view?.isPaused != false else { return }
         #if os(macOS)
         view?.needsDisplay = true
         #else
         view?.setNeedsDisplay()
         #endif
+    }
+
+    /// Keeps rotating at `angularVelocity` (radians per second, screen convention) after a drag,
+    /// slowing to a stop. The view draws continuously only while spinning.
+    public func fling(angularVelocity: SIMD2<Float>) {
+        spinVelocity = angularVelocity
+        lastSpinTime = nil
+        guard isSpinning else { return stopSpinning() }
+        // Timed drawing: both flags off, per MTKView's documented modes.
+        view?.enableSetNeedsDisplay = false
+        view?.isPaused = false
+    }
+
+    public func stopSpinning() {
+        spinVelocity = .zero
+        lastSpinTime = nil
+        guard let view, !view.isPaused else { return }
+        view.isPaused = true
+        view.enableSetNeedsDisplay = true
+        requestRedraw()
+    }
+
+    private func advanceSpin() {
+        guard isSpinning else { return }
+        let now = CACurrentMediaTime()
+        let elapsed = Float(min(now - (lastSpinTime ?? now - 1.0 / 60), 0.1))
+        lastSpinTime = now
+        camera.rotate(by: spinVelocity * elapsed)
+        spinVelocity *= exp(-spinDamping * elapsed)
+        if !isSpinning {
+            stopSpinning()
+        }
     }
 
     private func rebuildInstances() throws {
@@ -134,6 +182,7 @@ public final class StarRenderer: NSObject {
     }
 
     private func render(in view: MTKView) {
+        advanceSpin()
         guard let instanceBuffer,
               let passDescriptor = view.currentRenderPassDescriptor,
               let drawable = view.currentDrawable,

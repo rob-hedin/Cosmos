@@ -1,1 +1,29 @@
 # Cosmos
+
+A Swift and Metal framework for macOS 27 and iOS/iPadOS 27 that shows the 11,975 stars within 200 light years in 3D, at their true relative positions, sized and colored from catalog data. Rotatable, zoomable, with toggleable star names and star selection.
+
+## Modules
+
+| Module | Status | What it does |
+| --- | --- | --- |
+| `StarCatalog` | Done | Loads the bundled CSV; computes 3D positions (light years, Sun at origin, equatorial frame), luminosity, temperature, estimated radius, and blackbody color; size normalization for both size modes |
+| `StarRenderer` | Planned | Metal renderer: one instanced draw of all stars, orbit camera, name labels |
+| `StarFieldUI` | Planned | SwiftUI `StarFieldView`, macOS window and iOS `Scene` helpers, input and selection |
+
+## Usage
+
+```swift
+import StarCatalog
+
+let catalog = try StarCatalog.bundled()
+let sirius = catalog.star(named: "Sirius")
+let sizes = catalog.normalizedSizes(for: .luminosity) // or .estimatedRadius
+```
+
+## Data
+
+`Sources/StarCatalog/Resources/stars.csv` is derived from the HYG database (stars within 200 ly). Temperatures come from B-V via the Ballesteros formula, falling back to spectral class and then the catalog color name. Radii are estimates from R ∝ √L / T².
+
+## Requirements
+
+Swift 6.4, macOS 27 or iOS/iPadOS 27. `StarCatalog` is pure Swift and also builds and tests on Linux, which CI uses.

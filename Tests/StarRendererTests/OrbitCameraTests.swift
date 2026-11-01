@@ -44,6 +44,6 @@ import Testing
 
     @Test func shaderStructsHaveExpectedLayout() {
         #expect(MemoryLayout<StarInstance>.stride == 32)
-        #expect(MemoryLayout<FrameUniforms>.stride == 80)
+        #expect(MemoryLayout<FrameUniforms>.stride == 96)
     }
 }

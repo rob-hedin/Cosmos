@@ -29,7 +29,22 @@ public final class StarRenderer: NSObject {
     }
 
     /// On-screen diameter range in points; scaled to pixels for the display.
-    public var pointSizeRange: ClosedRange<Float> = 1.5...22 {
+    public var pointSizeRange: ClosedRange<Float> = 1.5...20 {
+        didSet { requestRedraw() }
+    }
+
+    /// Curve applied to normalized sizes. Above 1, most stars stay small and only the largest grow.
+    public var sizeExponent: Float = 4 {
+        didSet { requestRedraw() }
+    }
+
+    /// Overall brightness of each star.
+    public var exposure: Float = 0.8 {
+        didSet { requestRedraw() }
+    }
+
+    /// Color saturation: 1 is the true blackbody color, higher makes tints easier to see.
+    public var saturation: Float = 1.6 {
         didSet { requestRedraw() }
     }
 
@@ -133,7 +148,10 @@ public final class StarRenderer: NSObject {
             viewProjection: camera.viewProjection(aspectRatio: drawableSize.x / max(drawableSize.y, 1)),
             viewportSize: drawableSize,
             minPointSize: pointSizeRange.lowerBound * pixelsPerPoint,
-            maxPointSize: pointSizeRange.upperBound * pixelsPerPoint
+            maxPointSize: pointSizeRange.upperBound * pixelsPerPoint,
+            sizeExponent: sizeExponent,
+            exposure: exposure,
+            saturation: saturation
         )
 
         encoder.label = "Stars"
@@ -148,7 +166,7 @@ public final class StarRenderer: NSObject {
     }
 }
 
-extension StarRenderer: @preconcurrency MTKViewDelegate {
+extension StarRenderer: MTKViewDelegate {
     public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         requestRedraw()
     }

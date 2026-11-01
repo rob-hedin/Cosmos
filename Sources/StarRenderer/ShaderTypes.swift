@@ -14,4 +14,8 @@ struct FrameUniforms {
     var viewportSize: SIMD2<Float>
     var minPointSize: Float
     var maxPointSize: Float
+    var sizeExponent: Float
+    var exposure: Float
+    var saturation: Float
+    var padding: Float = 0
 }

@@ -2,13 +2,18 @@ import StarCatalog
 import SwiftUI
 
 /// A compact card describing one star: name, distance, type, magnitudes and physical estimates.
+/// Pass `onShowPlanetarySystem` to add a "Show planetary system" button for a star that has one.
 public struct StarInfoCard: View {
     private let star: Star
     private let onClose: (() -> Void)?
+    private let onShowPlanetarySystem: (() -> Void)?
 
-    public init(star: Star, onClose: (() -> Void)? = nil) {
+    /// `onClose` adds a close button. `onShowPlanetarySystem` adds a "Show planetary system" button.
+    /// It comes last so an existing trailing closure still binds to `onClose`.
+    public init(star: Star, onClose: (() -> Void)? = nil, onShowPlanetarySystem: (() -> Void)? = nil) {
         self.star = star
         self.onClose = onClose
+        self.onShowPlanetarySystem = onShowPlanetarySystem
     }
 
     public var body: some View {
@@ -42,6 +47,12 @@ public struct StarInfoCard: View {
                 row("Radius (est.)", "\(significant(star.estimatedRadius)) R☉")
             }
             .font(.callout)
+
+            if let onShowPlanetarySystem {
+                Button("Show planetary system", systemImage: "globe", action: onShowPlanetarySystem)
+                    .buttonStyle(.borderless)
+                    .help("Open this star's planetary system")
+            }
         }
         .padding(12)
         .frame(maxWidth: 300, alignment: .leading)

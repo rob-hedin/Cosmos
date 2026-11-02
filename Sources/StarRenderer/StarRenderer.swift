@@ -402,6 +402,26 @@ public final class StarRenderer: NSObject {
         ).map { catalog.stars[shownIndices[$0]] }
     }
 
+    /// The star under `point`, or `Star.sun` when the Sun marker is the nearest hit. Only when
+    /// `showsSunMarker` is on; otherwise this is the same as `star(at:viewSize:tolerance:)`.
+    public func starOrSun(at point: CGPoint, viewSize: CGSize, tolerance: Float = 20) -> Star? {
+        guard showsSunMarker else { return star(at: point, viewSize: viewSize, tolerance: tolerance) }
+        let hit = StarPicker.nearestHit(
+            to: SIMD2(Float(point.x), Float(point.y)),
+            in: shownIndices.map { positions[$0] },
+            radii: shownIndices.map { drawnDiameter(ofStarAt: $0) / 2 },
+            sunRadius: Self.sunMarkerDiameter / 2,
+            camera: camera,
+            viewportSize: SIMD2(Float(viewSize.width), Float(viewSize.height)),
+            maxDistance: tolerance
+        )
+        switch hit {
+        case .star(let index): return catalog.stars[shownIndices[index]]
+        case .sun: return .sun
+        case nil: return nil
+        }
+    }
+
     // MARK: Motion
 
     /// Keeps rotating at `angularVelocity` (radians per second, screen convention) after a drag,

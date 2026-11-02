@@ -107,3 +107,27 @@ public struct Star: Sendable, Hashable, Identifiable {
         color = Astrophysics.color(temperature: temperature)
     }
 }
+
+extension Star {
+    /// The ID the star view uses for the Sun, which is not a row in any catalog. Catalogs must not
+    /// use it. `StarCatalog.star(withID:)` never returns the Sun.
+    public static let sunID: Star.ID = .min
+
+    /// The Sun as a `Star`, so it can be selected and described like any other: "Sun", G2V,
+    /// B-V 0.65, "Yellow", apparent magnitude -26.74, absolute magnitude
+    /// `Astrophysics.solarAbsoluteMagnitude` (4.83), at the origin (distance 0, RA 0h, Dec 0°),
+    /// naked-eye, no constellation, no HIP/HD number. Its ID is `sunID`.
+    public static let sun = Star(
+        id: sunID,
+        name: "Sun",
+        apparentMagnitude: -26.74,
+        absoluteMagnitude: Astrophysics.solarAbsoluteMagnitude,
+        spectralType: "G2V",
+        colorIndex: 0.65,
+        colorName: "Yellow",
+        rightAscensionHours: 0,
+        declinationDegrees: 0,
+        distanceLightYears: 0,
+        isNakedEye: true
+    )
+}

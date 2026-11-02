@@ -5,7 +5,8 @@ import SwiftUI
 /// rings and the size mode. `StarFieldScene` uses this; use it directly to get the same controls
 /// in your own layout. Pass `showsRouteBuilder: false` to leave out the route builder,
 /// `showsConstellationsButton: false` to leave out the constellations toggle, or
-/// `showsToolbar: false` to leave out the controls altogether.
+/// `showsToolbar: false` to leave out the controls altogether. Pass `planetarySystems` to choose
+/// which stars offer a planetary system on their info card; it defaults to the built-in Solar System.
 public struct StarFieldBrowser: View {
     @State private var sizeMode: StarSizeMode
     @State private var showsLabels = true
@@ -30,6 +31,7 @@ public struct StarFieldBrowser: View {
     private let showsToolbar: Bool
     private let showsRouteBuilder: Bool
     private let showsConstellationsButton: Bool
+    private let planetarySystems: PlanetarySystemDirectory
 
     /// Opens on `focus` if given, otherwise frames `route`, showing the stars `filter` lets
     /// through; see ``StarFieldView``. Shows the bundled catalog unless you pass one.
@@ -42,7 +44,8 @@ public struct StarFieldBrowser: View {
         showsConstellations: Bool = false,
         showsToolbar: Bool = true,
         showsRouteBuilder: Bool = true,
-        showsConstellationsButton: Bool = true
+        showsConstellationsButton: Bool = true,
+        planetarySystems: PlanetarySystemDirectory = .builtIn
     ) {
         customCatalog = catalog
         _sizeMode = State(initialValue: sizeMode)
@@ -53,6 +56,7 @@ public struct StarFieldBrowser: View {
         self.showsToolbar = showsToolbar
         self.showsRouteBuilder = showsRouteBuilder
         self.showsConstellationsButton = showsConstellationsButton
+        self.planetarySystems = planetarySystems
     }
 
     private var catalog: StarCatalog? {
@@ -64,12 +68,13 @@ public struct StarFieldBrowser: View {
             StarFieldView(
                 catalog: customCatalog, sizeMode: sizeMode, selection: $selection, showsLabels: showsLabels,
                 showsReferenceRings: showsRings, showsConstellations: showsConstellations, focus: focus,
-                route: route, filter: filter
+                route: route, filter: filter, planetarySystems: planetarySystems
             )
         } else {
             StarFieldView(
                 sizeMode: sizeMode, selection: $selection, showsLabels: showsLabels, showsReferenceRings: showsRings,
-                showsConstellations: showsConstellations, focus: focus, route: route, filter: filter
+                showsConstellations: showsConstellations, focus: focus, route: route, filter: filter,
+                planetarySystems: planetarySystems
             )
         }
     }
@@ -218,10 +223,10 @@ public struct StarFieldBrowser: View {
         .toggleStyle(.button)
     }
 
-    /// Selects the star and glides to it. The Sun can't be selected, so picking it just flies home.
+    /// Selects the star and glides to it. Picking the Sun selects it as `Star.sunID` and flies home.
     private func pick(_ location: StarLocation) {
         if isEditingRoute { addStop(location) }
-        selection = location.starID
+        selection = location.starID ?? Star.sunID
         flight = FlightRequest(position: location.position, serial: (flight?.serial ?? 0) + 1)
         isSearching = false
     }

@@ -167,6 +167,29 @@ public final class StarRenderer: NSObject {
         didSet { requestRedraw() }
     }
 
+    /// Draws the constellation figures as seen from Earth, on a sphere around the Sun.
+    public var showsConstellations = false {
+        didSet {
+            guard showsConstellations != oldValue else { return }
+            rebuildConstellations()
+            requestRedraw()
+        }
+    }
+
+    /// Color of the constellation lines; names are drawn brighter.
+    public var constellationColor: SIMD3<Float> = SIMD3(0.14, 0.18, 0.3) {
+        didSet { requestRedraw() }
+    }
+
+    /// Radius of the sphere the constellation figures are drawn on, in light years.
+    public var skySphereRadius: Float = 200 {
+        didSet {
+            guard skySphereRadius != oldValue else { return }
+            rebuildConstellations()
+            requestRedraw()
+        }
+    }
+
     /// Stars to join with lines, in order. Each stop gets a marker and its name.
     public var route: StarRoute? {
         didSet {
@@ -249,6 +272,16 @@ public final class StarRenderer: NSObject {
     /// Keys into `overlayAtlas` only; layout uses its own candidate indices.
     private static let sunLabelID = -1
     private static func ringLabelID(_ index: Int) -> Int { -2 - index }
+    /// The constellation figures, loaded the first time they're shown.
+    private lazy var constellations: [Constellation] = (try? Constellation.bundled()) ?? []
+    /// Line segments, two points each.
+    private var constellationLineBuffer: MTLBuffer?
+    private var constellationLineCount = 0
+    /// Where each figure's name goes, by figure index.
+    private var constellationLabelPoints: [SIMD3<Float>] = []
+    private lazy var constellationAtlas: LabelAtlas? = LabelAtlas(
+        device: device, labels: constellations.enumerated().map { (id: $0.offset, text: $0.element.name) }, width: 1_024
+    )
     /// The route's points, one per stop, drawn as a line strip.
     private var routePointBuffer: MTLBuffer?
     /// Stop names, keyed by stop index.
@@ -504,6 +537,29 @@ public final class StarRenderer: NSObject {
         ringPointBuffer?.label = "Reference rings"
     }
 
+    private func rebuildConstellations() {
+        var points: [SIMD4<Float>] = []
+        var labels: [SIMD3<Float>] = []
+        if showsConstellations {
+            let radius = Double(skySphereRadius)
+            for figure in constellations {
+                for line in figure.lines {
+                    for (a, b) in zip(line, line.dropFirst()) {
+                        points.append(SIMD4(SIMD3<Float>(a.direction * radius), 1))
+                        points.append(SIMD4(SIMD3<Float>(b.direction * radius), 1))
+                    }
+                }
+                labels.append(SIMD3<Float>(figure.center.direction * radius))
+            }
+        }
+        constellationLabelPoints = labels
+        constellationLineCount = points.count
+        constellationLineBuffer = points.isEmpty ? nil : device.makeBuffer(
+            bytes: points, length: MemoryLayout<SIMD4<Float>>.stride * points.count, options: .storageModeShared
+        )
+        constellationLineBuffer?.label = "Constellations"
+    }
+
     private func rebuildRoute() {
         let stops = route?.stops ?? []
         let points = stops.map { SIMD4($0.position, 1) }
@@ -563,6 +619,15 @@ public final class StarRenderer: NSObject {
             }
         }
 
+        if showsConstellations, let constellationLineBuffer {
+            var color = SIMD4(constellationColor, 1)
+            encoder.setRenderPipelineState(linePipeline)
+            encoder.setVertexBuffer(constellationLineBuffer, offset: 0, index: 0)
+            encoder.setVertexBytes(&uniforms, length: MemoryLayout<FrameUniforms>.stride, index: 1)
+            encoder.setFragmentBytes(&color, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
+            encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: constellationLineCount)
+        }
+
         encoder.setRenderPipelineState(pipeline)
         encoder.setVertexBuffer(instanceBuffer, offset: 0, index: 0)
         encoder.setVertexBytes(&uniforms, length: MemoryLayout<FrameUniforms>.stride, index: 1)
@@ -603,7 +668,8 @@ public final class StarRenderer: NSObject {
             drawMarker(at: selected.position, diameter: selectionRingDiameter, color: selectionRingColor)
         }
 
-        if showsLabels || showsReferenceRings || showsSunMarker || route?.stops.isEmpty == false {
+        if showsLabels || showsReferenceRings || showsSunMarker || route?.stops.isEmpty == false
+            || showsConstellations {
             drawLabels(with: encoder, commandBuffer: commandBuffer, in: view, pixelsPerPoint: pixelsPerPoint)
         }
         encoder.endEncoding()
@@ -691,6 +757,22 @@ extension StarRenderer {
                 guard let entry = routeAtlas.entries[index], let anchor = project(stop.position) else { continue }
                 add(entry, from: routeAtlas.texture, color: color, at: anchor,
                     radius: Self.routeMarkerDiameter / 2, priority: -1_500 + Float(index), triesOtherSides: true)
+            }
+        }
+
+        // Constellation names rank after the brighter star names, and take at most a third of
+        // the label slots, those nearest the middle of the view, so star names still show.
+        if showsConstellations, let constellationAtlas {
+            let color = SIMD4(simd_min(constellationColor * 3, SIMD3(repeating: 1)), 0.9)
+            let middle = viewport / 2
+            let names = constellationLabelPoints.enumerated()
+                .compactMap { index, point in project(point).map { (index: index, anchor: $0) } }
+                .sorted { simd_distance_squared($0.anchor, middle) < simd_distance_squared($1.anchor, middle) }
+                .prefix(max(maxLabels / 3, 1))
+            for name in names {
+                guard let entry = constellationAtlas.entries[name.index] else { continue }
+                add(entry, from: constellationAtlas.texture, color: color, at: name.anchor,
+                    radius: 0, priority: 4, triesOtherSides: true)
             }
         }
 

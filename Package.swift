@@ -10,7 +10,11 @@ var products: [Product] = [
 var targets: [Target] = [
     .target(
         name: "StarCatalog",
-        resources: [.copy("Resources/stars.csv")]
+        resources: [
+            .copy("Resources/stars.csv"),
+            .copy("Resources/constellations.json"),
+            .copy("Resources/constellations-LICENSE.txt"),
+        ]
     ),
     .testTarget(
         name: "StarCatalogTests",

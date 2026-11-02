@@ -3,12 +3,14 @@ import SwiftUI
 
 /// A star field with built-in controls: search, filters, a route builder, star names, reference
 /// rings and the size mode. `StarFieldScene` uses this; use it directly to get the same controls
-/// in your own layout. Pass `showsRouteBuilder: false` to leave out the route builder, or
+/// in your own layout. Pass `showsRouteBuilder: false` to leave out the route builder,
+/// `showsConstellationsButton: false` to leave out the constellations toggle, or
 /// `showsToolbar: false` to leave out the controls altogether.
 public struct StarFieldBrowser: View {
     @State private var sizeMode: StarSizeMode
     @State private var showsLabels = true
     @State private var showsRings = true
+    @State private var showsConstellations: Bool
     @State private var selection: Star.ID?
     @State private var filter: StarFilter
     @State private var isSearching = false
@@ -27,6 +29,7 @@ public struct StarFieldBrowser: View {
     private let route: [String]
     private let showsToolbar: Bool
     private let showsRouteBuilder: Bool
+    private let showsConstellationsButton: Bool
 
     /// Opens on `focus` if given, otherwise frames `route`, showing the stars `filter` lets
     /// through; see ``StarFieldView``. Shows the bundled catalog unless you pass one.
@@ -36,16 +39,20 @@ public struct StarFieldBrowser: View {
         focus: StarFieldFocus? = nil,
         route: [String] = [],
         filter: StarFilter = .all,
+        showsConstellations: Bool = false,
         showsToolbar: Bool = true,
-        showsRouteBuilder: Bool = true
+        showsRouteBuilder: Bool = true,
+        showsConstellationsButton: Bool = true
     ) {
         customCatalog = catalog
         _sizeMode = State(initialValue: sizeMode)
         self.focus = focus
         self.route = route
         _filter = State(initialValue: filter)
+        _showsConstellations = State(initialValue: showsConstellations)
         self.showsToolbar = showsToolbar
         self.showsRouteBuilder = showsRouteBuilder
+        self.showsConstellationsButton = showsConstellationsButton
     }
 
     private var catalog: StarCatalog? {
@@ -56,12 +63,13 @@ public struct StarFieldBrowser: View {
         if let customCatalog {
             StarFieldView(
                 catalog: customCatalog, sizeMode: sizeMode, selection: $selection, showsLabels: showsLabels,
-                showsReferenceRings: showsRings, focus: focus, route: route, filter: filter
+                showsReferenceRings: showsRings, showsConstellations: showsConstellations, focus: focus,
+                route: route, filter: filter
             )
         } else {
             StarFieldView(
                 sizeMode: sizeMode, selection: $selection, showsLabels: showsLabels, showsReferenceRings: showsRings,
-                focus: focus, route: route, filter: filter
+                showsConstellations: showsConstellations, focus: focus, route: route, filter: filter
             )
         }
     }
@@ -202,6 +210,10 @@ public struct StarFieldBrowser: View {
                 .help("Star names")
             Toggle("Rings", systemImage: "circle.dashed", isOn: $showsRings)
                 .help("Rings at 50, 100 and 200 light years from the Sun")
+            if showsConstellationsButton {
+                Toggle("Constellations", systemImage: "star", isOn: $showsConstellations)
+                    .help("Constellation figures as seen from Earth, on a sphere 200 ly around the Sun")
+            }
         }
         .toggleStyle(.button)
     }

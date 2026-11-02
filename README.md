@@ -73,6 +73,12 @@ swift run CosmosDemo --star Vega --span 20
 swift run CosmosDemo --route "Sol, Alpha Centauri, Sirius"
 ```
 
+### Constellations
+
+The Constellations toggle draws the 88 constellation figures, with their names, as seen from Earth: on a sphere 200 ly around the Sun, by each star's direction alone, so the figures are complete even where their stars lie far beyond the catalog (most of Orion, Deneb, Polaris). Zoom in toward the Sun and they look as they do in the night sky.
+
+From code, pass `showsConstellations: true` to `StarFieldView`, `StarFieldBrowser`, `StarFieldScene` or `StarFieldWindow.open`, or run the demo with `--constellations`. Pass `showsConstellationsButton: false` to leave the toggle out of the controls. The figures come from [d3-celestial](https://github.com/ofrohn/d3-celestial) (BSD license, see `Sources/StarCatalog/Resources/constellations-LICENSE.txt`).
+
 ### Building a route
 
 The route button turns on route mode: each star you click (or pick from search) becomes the next stop, and the lines and distance tile update as you go. The first stop starts a new route, replacing one passed in from code. Clicking a star that's already on the route asks whether to remove it or visit it again. The tile's undo button removes the last stop, and its clear button, shown whenever a route is on screen, removes the whole route. Turn route mode off to click stars normally; the route stays.

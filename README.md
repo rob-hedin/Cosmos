@@ -107,9 +107,32 @@ let bright = catalog.stars(matching: StarFilter(brightestAbsoluteMagnitude: 1))
 let matches = catalog.search("alpha cen")   // Rigil Kentaurus, Toliman, Proxima Centauri
 ```
 
+### Planetary systems
+
+A Planetary System is a Central Star with the Bodies and Belts that orbit it (terms in `CONTEXT.md`). Describe one as Swift values or as JSON with the same field names; `PlanetarySystem` checks it and throws `PlanetarySystemError` listing every problem.
+
+```swift
+let solar = try PlanetarySystem.solarSystem(catalog: catalog)   // built in, tied to the Sun
+let earth = solar.body(named: "Earth")!
+solar.periodDays(of: earth)                    // ≈ 365.25, from Kepler's third law
+solar.bodies(orbiting: "Jupiter")              // Io, Europa, Ganymede, Callisto
+solar.belt(containing: solar.body(named: "Ceres")!)?.name   // "Asteroid belt"
+
+let spec = PlanetarySystemSpec(
+    star: CentralStarSpec(name: "Proxima Centauri"),          // catalog star: values filled in
+    bodies: [Body(name: "Proxima b", kind: .planet, parent: "Proxima Centauri",
+                  orbit: Orbit(distanceAU: 0.0485), radiusKilometers: 7_100, massEarths: 1.07)]
+)
+let proxima = try PlanetarySystem(spec, catalog: catalog)
+```
+
+Distances are in AU (moons too), radii in kilometers and masses in Earth masses. An orbit with only a distance is circular and flat. A star that isn't in the catalog needs a spectral type; its mass, radius and temperature are estimated from it unless given.
+
 ## Data
 
 `Sources/StarCatalog/Resources/stars.csv` is derived from the HYG database (stars within 200 ly). Temperatures come from B-V via the Ballesteros formula, falling back to spectral class and then the catalog color name. Radii are estimates from R ∝ √L / T².
+
+`Sources/StarCatalog/Resources/solar-system.json` holds the 8 planets, 5 dwarf planets, 8 major moons and the asteroid and Kuiper belts, with orbital elements and physical values from NASA's planetary fact sheets (J2000 elements for the planets).
 
 ## Requirements
 

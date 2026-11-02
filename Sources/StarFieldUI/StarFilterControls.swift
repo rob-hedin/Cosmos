@@ -11,11 +11,15 @@ struct StarFilterControls: View {
     private static let magnitudeRange = -3.0...20.0
 
     var body: some View {
+        #if os(macOS)
+        form
+        #else
         // Scrolls only where the popover is too short, as on a phone in landscape.
         ViewThatFits(in: .vertical) {
             form
             ScrollView { form }
         }
+        #endif
     }
 
     private var form: some View {

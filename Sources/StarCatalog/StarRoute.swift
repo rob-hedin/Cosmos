@@ -51,15 +51,11 @@ extension StarCatalog {
         return star.map { StarLocation(name: $0.name, position: $0.position, starID: $0.id) }
     }
 
-    /// "hip 71683" or "hd 128620" (lowercased, single spaces), by the catalog's HIP or HD column.
+    /// "hip 71683", "HIP71683" or "hd 128620", by the catalog's HIP or HD column.
     private func star(catalogNumber key: String) -> Star? {
-        let parts = key.split(separator: " ")
-        guard parts.count == 2, let number = Int(parts[1]) else { return nil }
-        switch parts[0] {
-        case "hip": return stars.first { $0.hipparcosID == number }
-        case "hd": return stars.first { $0.henryDraperID == number }
-        default: return nil
-        }
+        guard let query = Self.catalogNumberQuery(key.filter { $0 != " " }), let number = Int(query.digits)
+        else { return nil }
+        return query.catalog == "hip" ? stars.first { $0.hipparcosID == number } : stars.first { $0.henryDraperID == number }
     }
 }
 

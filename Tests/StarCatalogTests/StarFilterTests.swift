@@ -176,6 +176,16 @@ private struct SplitMix: RandomNumberGenerator {
         #expect(catalog.search("HIP \(partial)", limit: 20).contains { $0.starID == rigil.id })
     }
 
+    @Test func compactCatalogNumbersWork() throws {
+        let sirius = try #require(catalog.star(named: "Sirius"))
+        let hip = try #require(sirius.hipparcosID)
+        #expect(catalog.search("HIP\(hip)").first?.starID == sirius.id)
+        #expect(catalog.location(named: "hip\(hip)")?.starID == sirius.id)
+        if let hd = sirius.henryDraperID {
+            #expect(catalog.search("HD\(hd)").first?.starID == sirius.id)
+        }
+    }
+
     @Test func multiwordQueriesMatchAtWordStarts() {
         // A word-start match beats a match inside a word.
         #expect(catalog.search("tau cet").first?.name == "52 Tau Cet")

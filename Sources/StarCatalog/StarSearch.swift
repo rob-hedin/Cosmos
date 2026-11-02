@@ -32,13 +32,11 @@ extension StarCatalog {
             if let star = star(named: name) { add(star, rank: alias == aliasKey ? 0 : 1) }
         }
         // "hip 7168" suggests every star whose HIP number starts with 7168, named or not.
-        let parts = key.split(separator: " ")
-        if parts.count == 2, ["hip", "hd"].contains(parts[0]), parts[1].allSatisfy(\.isNumber) {
-            let digits = String(parts[1])
+        if let number = Self.catalogNumberQuery(squeezedKey) {
             for star in stars {
-                guard let number = parts[0] == "hip" ? star.hipparcosID : star.henryDraperID else { continue }
-                let text = String(number)
-                if text.hasPrefix(digits) { add(star, rank: text == digits ? 0 : 1) }
+                guard let id = number.catalog == "hip" ? star.hipparcosID : star.henryDraperID else { continue }
+                let text = String(id)
+                if text.hasPrefix(number.digits) { add(star, rank: text == number.digits ? 0 : 1) }
             }
         }
         for (star, name) in zip(stars, searchNames) {
@@ -60,6 +58,15 @@ extension StarCatalog {
             .sorted { ($0.rank, $0.magnitude, $0.location.name) < ($1.rank, $1.magnitude, $1.location.name) }
             .prefix(limit)
             .map(\.location)
+    }
+
+    /// "hip71683" or "hd 128620" (lowercased; spaces removed) as ("hip", "71683").
+    static func catalogNumberQuery(_ squeezed: String) -> (catalog: String, digits: String)? {
+        for prefix in ["hip", "hd"] where squeezed.hasPrefix(prefix) {
+            let digits = squeezed.dropFirst(prefix.count)
+            if !digits.isEmpty, digits.allSatisfy(\.isNumber) { return (prefix, String(digits)) }
+        }
+        return nil
     }
 
     /// Lowercased, without accents, with single spaces.

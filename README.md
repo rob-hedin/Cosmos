@@ -8,7 +8,7 @@ A Swift and Metal framework for macOS 27 and iOS/iPadOS 27 that shows the 11,975
 | --- | --- | --- |
 | `StarCatalog` | Done | Loads the bundled CSV; computes 3D positions (light years, Sun at origin, equatorial frame), luminosity, temperature, estimated radius, and blackbody color; size normalization for both size modes |
 | `StarRenderer` | First light | Metal renderer: one instanced draw of all stars with additive glow, Sun marker, `OrbitCamera` with rotate, zoom, pan, roll, reset and fling; picking, selection ring, fly-to, decluttered star names. `PlanetarySystemRenderer` draws one planetary system: lit spheres, belts, orbit lines, names. |
-| `StarFieldUI` | First light | SwiftUI `StarFieldView`, `StarFieldScene` (macOS and iOS), `StarFieldWindow.open()` (macOS), mouse, trackpad and touch input, selection binding, `StarInfoCard`, `StarFieldBrowser` with search, filters, a route builder, and name and size controls. `PlanetarySystemView` and `PlanetarySystemInfoCard` for planetary systems. |
+| `StarFieldUI` | First light | SwiftUI `StarFieldView`, `StarFieldScene` (macOS and iOS), `StarFieldWindow.open()` (macOS), mouse, trackpad and touch input, selection binding, `StarInfoCard`, `StarFieldBrowser` with search, filters, a route builder, and name and size controls. `PlanetarySystemView`, `PlanetarySystemInfoCard` and `PlanetarySystemWindow.open()` (macOS) for planetary systems; the star view's info card opens them. |
 
 ## Usage
 
@@ -34,7 +34,7 @@ Opens a macOS window with every star, viewed from outside the 200 ly sphere with
 | Zoom | Scroll wheel, trackpad scroll or pinch |
 | Pan | Shift-drag, right-drag or middle-drag |
 | Roll | Trackpad rotate |
-| Select a star | Click it (shows a ring and an info card; click empty space to deselect) |
+| Select a star | Click it (shows a ring and an info card; click empty space to deselect). Click the Sun's marker to select the Sun |
 | Fly to a star | Double-click it, then rotate around it |
 | Reset | Double-click empty space |
 
@@ -46,15 +46,50 @@ On iPhone and iPad:
 | Zoom | Pinch, or scroll with an iPad trackpad or mouse |
 | Pan | Two-finger drag |
 | Roll | Two-finger rotate |
-| Select a star | Tap it (tap empty space to deselect) |
+| Select a star | Tap it (tap empty space to deselect). Tap the Sun's marker to select the Sun |
 | Fly to a star | Double-tap it |
 | Reset | Double-tap empty space |
 
-`CosmosDemo` runs on macOS; on iOS, use `StarFieldScene()` or `StarFieldView()` in an app target.
+`swift run CosmosDemo` runs on macOS. For iPhone and iPad, `Demo/CosmosDemo.swiftpm` is a small app package that builds with `xcodebuild` for the iOS Simulator (it depends on this package by path):
+
+```sh
+cd Demo/CosmosDemo.swiftpm
+xcodebuild -scheme CosmosDemo \
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' \
+  -derivedDataPath ../../.build/demo-ios build -quiet
+xcrun simctl install "iPhone 18 Pro" ../../.build/demo-ios/Build/Products/Debug-iphonesimulator/CosmosDemo.app
+xcrun simctl launch "iPhone 18 Pro" com.rob-hedin.CosmosDemo                  # the star field
+xcrun simctl launch "iPhone 18 Pro" com.rob-hedin.CosmosDemo --solar-system   # the Solar System
+```
+
+Use another simulator name, such as `iPad Pro 11-inch (M5)`, for the iPad. The same build installs on both. Xcode may print "Supported platforms for the buildables in the current scheme is empty"; it is harmless. The manifest works out the package's name from the folder the repository is checked out in, so it works in a worktree too. Opening `CosmosDemo.swiftpm` in Xcode and changing its settings in the UI can rewrite the manifest.
+
+In your own app, use `StarFieldScene()` or `StarFieldView()`.
 
 The controls at the top right turn star names and the reference rings on and off. The rings are 50, 100 and 200 ly from the Sun in three planes at right angles: the celestial equator (blue, labeled) and the two pole-to-pole planes through RA 0h/12h (green) and 6h/18h (amber). The controls also switch star size between luminosity and estimated radius. The Sun is marked with a ring and a label. Names appear for named stars bright enough to see with the naked eye from the camera's position, brightest first, without overlapping; the selected star is always labeled.
 
 To show stars in your own app, use `StarFieldScene()` as a scene, place `StarFieldView()` in your UI, or call `StarFieldWindow.open()` from AppKit.
+
+### The Sun and planetary systems
+
+The Sun isn't a row in the catalog, but you can select it: click or tap its marker, or pick "Sun" or "Sol" from search. Its info card is `Star.sun`, and the selection binding holds `Star.sunID` (`Int.min`, which no catalog uses; `catalog.star(withID:)` never returns it). In route mode, clicks still add stars only.
+
+When the selected star has a planetary system, its info card has a **Show planetary system** button. On the Mac it opens a window titled with the system's name (pressing it again brings that window to the front); on iPhone and iPad it shows the system full screen, with a Done button. Which stars have a system comes from a `PlanetarySystemDirectory`, by the central star's catalog location. It defaults to `.builtIn`, which holds the Solar System, so the Sun's card offers it. Pass `.empty` for no buttons, or add your own systems:
+
+```swift
+let siriusSystem = try PlanetarySystem(name: "Sirius", centralStar: CentralStar(catalogStar: sirius), bodies: [...])
+let directory = PlanetarySystemDirectory(PlanetarySystemDirectory.builtIn.systems + [siriusSystem])
+StarFieldView(planetarySystems: directory)
+StarFieldWindow.open(planetarySystems: .empty)
+```
+
+`StarFieldBrowser`, `StarFieldScene` and `StarFieldWindow.open` take the same `planetarySystems:` parameter. A system whose central star was described from scratch has no place in the catalog, so it never matches a star; show it with `PlanetarySystemView` or `PlanetarySystemWindow.open(system:)` yourself. To put the button on a catalog star, build the system against the same catalog the view shows, with `CentralStar(catalogStar:)`.
+
+The demo opens the Solar System in its own window with `--solar-system`, and on the Mac the Planetary Systems menu has Show Solar System (⇧⌘S):
+
+```sh
+swift run CosmosDemo --solar-system
+```
 
 ### Focus and routes
 
@@ -142,6 +177,8 @@ The controls at the top right switch the scale, pause the orbits, set their spee
 | Deselect | Click empty space | Tap empty space |
 | Fly to a body and follow it | Double-click it | Double-tap it |
 | Back to the whole system | Double-click empty space | Double-tap empty space |
+
+`PlanetarySystemView` also keeps names clear of regions you pass to `starFieldLabelObstacles(_:)`, as `StarFieldView` does. On the Mac, `PlanetarySystemWindow.open(system:)` shows a system in a window from AppKit code.
 
 The card shows the body's kind, parent, distance, period, radius, mass when known, and the belt it lies in; for the central star, its spectral type, mass, radius and temperature. Names for crowded moons appear when you zoom in or select the moon.
 

@@ -77,13 +77,13 @@ swift run CosmosDemo --route "Sol, Alpha Centauri, Sirius"
 
 The magnifying glass (⌘F) opens a search field that suggests stars as you type, by name, alias or HIP/HD number. Return or a click picks one: it's selected and the view glides to it.
 
-The filter button hides stars by distance from the Sun, spectral class (O to M, white dwarfs, other) and brightness (absolute magnitude), or shows only stars in double and multiple systems. The selected star and route stops always stay visible. The catalog has no multiplicity column, so a star counts as part of a system if its spectral type lists a companion, or if another star lies within 0.3 ly of it across the sky at a matching distance.
+The filter button hides stars by distance from the Sun, spectral class (O to M, white dwarfs, other) and brightness (absolute magnitude), and by single stars, stars in double and multiple systems, or both (the default). The selected star and route stops always stay visible. The catalog has no multiplicity column, so a star counts as part of a system if its spectral type lists a companion, or if another star lies within 0.3 ly of it across the sky at a matching distance.
 
 From code, pass a filter, or filter the catalog yourself:
 
 ```swift
 StarFieldView(filter: StarFilter(distance: 0...50, spectralClasses: [.g, .k]))
-StarFieldView(filter: StarFilter(brightestAbsoluteMagnitude: 0, multipleSystemsOnly: true))
+StarFieldView(filter: StarFilter(brightestAbsoluteMagnitude: 0, multiplicity: .multiple))
 let bright = catalog.stars(matching: StarFilter(brightestAbsoluteMagnitude: 1))
 let matches = catalog.search("alpha cen")   // Rigil Kentaurus, Toliman, Proxima Centauri
 ```

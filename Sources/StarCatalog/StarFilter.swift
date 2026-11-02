@@ -54,6 +54,21 @@ extension Star {
     }
 }
 
+/// Whether a star is on its own or part of a double or multiple system.
+public enum StarMultiplicity: String, Sendable, Hashable, CaseIterable, Identifiable {
+    case single, multiple, both
+
+    public var id: Self { self }
+
+    public var title: String {
+        switch self {
+        case .single: "Single"
+        case .multiple: "Multiple"
+        case .both: "Both"
+        }
+    }
+}
+
 /// Which stars to show. The default shows every star.
 public struct StarFilter: Sendable, Hashable {
     /// Distance from the Sun, in light years.
@@ -62,19 +77,19 @@ public struct StarFilter: Sendable, Hashable {
     /// Show only stars at least this bright, as an absolute magnitude (lower is brighter).
     /// Nil shows every brightness.
     public var brightestAbsoluteMagnitude: Double?
-    /// Show only stars in double or multiple systems.
-    public var multipleSystemsOnly: Bool
+    /// Single stars, stars in double or multiple systems, or both.
+    public var multiplicity: StarMultiplicity
 
     public init(
         distance: ClosedRange<Double> = 0...Double.infinity,
         spectralClasses: Set<SpectralClass> = Set(SpectralClass.allCases),
         brightestAbsoluteMagnitude: Double? = nil,
-        multipleSystemsOnly: Bool = false
+        multiplicity: StarMultiplicity = .both
     ) {
         self.distance = distance
         self.spectralClasses = spectralClasses
         self.brightestAbsoluteMagnitude = brightestAbsoluteMagnitude
-        self.multipleSystemsOnly = multipleSystemsOnly
+        self.multiplicity = multiplicity
     }
 
     /// Shows every star.
@@ -84,14 +99,14 @@ public struct StarFilter: Sendable, Hashable {
     public var showsEverything: Bool {
         distance.lowerBound <= 0 && distance.upperBound == .infinity
             && spectralClasses.isSuperset(of: SpectralClass.allCases)
-            && brightestAbsoluteMagnitude == nil && !multipleSystemsOnly
+            && brightestAbsoluteMagnitude == nil && multiplicity == .both
     }
 
     public func includes(_ star: Star, in catalog: StarCatalog) -> Bool {
         distance.contains(star.distanceLightYears)
             && spectralClasses.contains(star.spectralClass)
             && brightestAbsoluteMagnitude.map { star.absoluteMagnitude <= $0 } ?? true
-            && (!multipleSystemsOnly || catalog.isInMultipleSystem(star))
+            && (multiplicity == .both || (multiplicity == .multiple) == catalog.isInMultipleSystem(star))
     }
 }
 

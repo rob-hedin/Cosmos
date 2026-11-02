@@ -61,8 +61,14 @@ struct StarFilterControls: View {
                 }
             }
 
-            Toggle("Multiple-star systems only", isOn: $filter.multipleSystemsOnly)
-                .help("Stars with a companion within 0.3 ly, or a companion in their spectral type")
+            section("Star systems") {
+                Picker("Star systems", selection: $filter.multiplicity) {
+                    ForEach(StarMultiplicity.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .help("Multiple: stars with a companion within 0.3 ly, or a companion in their spectral type")
+            }
 
             Divider()
             HStack {

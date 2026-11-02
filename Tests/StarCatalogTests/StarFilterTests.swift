@@ -55,10 +55,15 @@ import Testing
         #expect(!catalog.isInMultipleSystem(star))
     }
 
-    @Test func multipleSystemsFilterKeepsOnlySystemMembers() {
-        let shown = catalog.stars(matching: StarFilter(multipleSystemsOnly: true))
-        #expect(shown.count > 500 && shown.count < 2_000)
-        #expect(shown.allSatisfy { catalog.isInMultipleSystem($0) })
+    @Test func multiplicityFilterSplitsTheCatalog() {
+        let multiple = catalog.stars(matching: StarFilter(multiplicity: .multiple))
+        let single = catalog.stars(matching: StarFilter(multiplicity: .single))
+        #expect(multiple.count > 500 && multiple.count < 2_000)
+        #expect(multiple.allSatisfy { catalog.isInMultipleSystem($0) })
+        #expect(single.allSatisfy { !catalog.isInMultipleSystem($0) })
+        #expect(single.count + multiple.count == catalog.stars.count)
+        #expect(!StarFilter(multiplicity: .single).showsEverything)
+        #expect(catalog.stars(matching: StarFilter(multiplicity: .both)).count == catalog.stars.count)
     }
 
     /// The bucketed search finds the same pairs as comparing every pair.

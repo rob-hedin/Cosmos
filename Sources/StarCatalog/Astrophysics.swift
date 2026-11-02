@@ -80,49 +80,6 @@ public enum Astrophysics {
         "Yellow": 5_600, "Orange": 4_400, "Red": 3_200, "White dwarf": 10_000,
     ]
 
-    // MARK: Mass and orbits
-
-    /// One Earth mass in solar masses.
-    public static let earthMassInSolarMasses = 3.003_489e-6
-
-    /// Typical main-sequence mass, in solar masses, for the spectral class of a type string.
-    /// White dwarfs ("D") get 0.6. Returns nil when no class letter is found.
-    public static func estimatedMass(spectralType: String) -> Double? {
-        spectralClass(of: spectralType).flatMap { classMasses[$0] }
-    }
-
-    /// Typical main-sequence radius, in solar radii, for the spectral class of a type string.
-    /// Returns nil when no class letter is found.
-    public static func estimatedRadius(spectralType: String) -> Double? {
-        spectralClass(of: spectralType).flatMap { classRadii[$0] }
-    }
-
-    /// Estimated mass in solar masses for a catalog star, from the main-sequence relation
-    /// L ∝ M⁴, kept within 0.08 to 60. White dwarfs get 0.6. This is a rough estimate: it uses
-    /// visual luminosity and overstates the mass of giants.
-    public static func estimatedMass(luminosity: Double, spectralType: String?) -> Double {
-        if let type = spectralType, spectralClass(of: type) == "D" {
-            return classMasses["D"]!
-        }
-        return min(max(pow(luminosity, 0.25), 0.08), 60)
-    }
-
-    /// Days for one orbit, from Kepler's third law: P² = a³ / (M + m), with P in years,
-    /// a in AU and the masses in solar masses.
-    public static func orbitalPeriodDays(semiMajorAxisAU: Double, totalMassSolar: Double) -> Double {
-        365.256_363 * (pow(semiMajorAxisAU, 3) / totalMassSolar).squareRoot()
-    }
-
-    private static let classMasses: [Character: Double] = [
-        "O": 30, "B": 6, "A": 2, "F": 1.3, "G": 1.0,
-        "K": 0.75, "M": 0.3, "L": 0.075, "T": 0.05, "D": 0.6,
-    ]
-
-    private static let classRadii: [Character: Double] = [
-        "O": 10, "B": 4, "A": 1.8, "F": 1.3, "G": 1.0,
-        "K": 0.8, "M": 0.35, "L": 0.1, "T": 0.1, "D": 0.012,
-    ]
-
     // MARK: Color
 
     /// Linear RGB color of a blackbody at the given temperature, scaled so the brightest

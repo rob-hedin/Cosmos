@@ -14,7 +14,6 @@ var targets: [Target] = [
             .copy("Resources/stars.csv"),
             .copy("Resources/constellations.json"),
             .copy("Resources/constellations-LICENSE.txt"),
-            .copy("Resources/solar-system.json"),
         ]
     ),
     .testTarget(

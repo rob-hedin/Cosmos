@@ -33,7 +33,7 @@ import Testing
         #expect(Astrophysics.estimatedMass(spectralType: "DA2") == 0.6)
         #expect(Astrophysics.estimatedMass(spectralType: "sdM4") == m4)
         #expect(Astrophysics.estimatedMass(spectralType: "dM4") == m4)
-        #expect(m4 < m45 && m45 < m5Again)
+        #expect(m5Again < m45 && m45 < m4)
         #expect(Astrophysics.estimatedMass(spectralType: "K") == Astrophysics.estimatedMass(spectralType: "K5"))
     }
 

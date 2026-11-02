@@ -29,7 +29,13 @@ import Testing
         let actual = system.bodies.map { ($0.name, $0.kind, $0.parent) }
 
         #expect(actual.count == 21)
-        #expect(actual.elementsEqual(expected, by: { $0.0 == $1.0 && $0.1 == $1.1 && $0.2 == $1.2 }))
+        let sameRows = actual.elementsEqual(expected) { (a: (String, Body.Kind, Parent), b: (String, Body.Kind, Parent)) -> Bool in
+            let sameName: Bool = a.0 == b.0
+            let sameKind: Bool = a.1 == b.1
+            let sameParent: Bool = a.2 == b.2
+            return sameName && sameKind && sameParent
+        }
+        #expect(sameRows)
         #expect(system.bodies.filter { $0.kind == .comet }.isEmpty)
         #expect(system.belts.map(\.name) == ["Asteroid belt", "Kuiper belt"])
         #expect(system.belts.allSatisfy { $0.parent == .centralStar })

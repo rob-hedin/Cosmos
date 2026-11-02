@@ -252,8 +252,8 @@ import Testing
     @Test func twoBadColorComponentsProduceTwoProblems() {
         let found = problems(bodies: [makeBody("Colored", color: SIMD3(-0.1, 1.1, 0.5))])
         #expect(found.count == 2)
-        #expect(found.contains(.invalidValue(name: "Colored", field: "color.red", value: -0.1)))
-        #expect(found.contains(.invalidValue(name: "Colored", field: "color.green", value: 1.1)))
+        #expect(found.contains(.invalidValue(name: "Colored", field: "color.red", value: Double(Float(-0.1)))))
+        #expect(found.contains(.invalidValue(name: "Colored", field: "color.green", value: Double(Float(1.1)))))
     }
 
     @Test(arguments: [SIMD3<Float>(0, 0, 0), SIMD3<Float>(1, 1, 1), SIMD3<Float>(0, 0.5, 1)])
@@ -308,7 +308,7 @@ private func makeStar(
     id: Int,
     name: String,
     spectralType: String?,
-    absoluteMagnitude: Double
+    absoluteMagnitude: Double = 5
 ) -> Star {
     Star(
         id: id,

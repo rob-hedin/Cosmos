@@ -9,6 +9,7 @@ import SwiftUI
 /// Options:
 /// - `--star NAME [--span LY]` opens centered on a star, `LY` light years across (default 20).
 /// - `--route "Sol, Alpha Centauri, Sirius"` draws a route between the stars and frames it.
+/// - `--no-route-builder` leaves out the route builder; `--no-toolbar` leaves out all the controls.
 @main
 struct CosmosDemoApp: App {
     private let options = DemoOptions(arguments: CommandLine.arguments)
@@ -22,7 +23,10 @@ struct CosmosDemoApp: App {
     }
 
     var body: some Scene {
-        StarFieldScene(title: "Cosmos", focus: options.focus, route: options.route)
+        StarFieldScene(
+            title: "Cosmos", focus: options.focus, route: options.route,
+            showsToolbar: options.showsToolbar, showsRouteBuilder: options.showsRouteBuilder
+        )
     }
 }
 
@@ -30,6 +34,8 @@ struct CosmosDemoApp: App {
 struct DemoOptions {
     var focus: StarFieldFocus?
     var route: [String] = []
+    var showsToolbar = true
+    var showsRouteBuilder = true
 
     init(arguments: [String]) {
         /// The value after `flag`, unless it's missing or is another option.
@@ -42,6 +48,8 @@ struct DemoOptions {
             let span = value(after: "--span").flatMap(Double.init).flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 20
             focus = StarFieldFocus(star: star, span: span)
         }
+        showsToolbar = !arguments.contains("--no-toolbar")
+        showsRouteBuilder = !arguments.contains("--no-route-builder")
         if let list = value(after: "--route") {
             route = list.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         }

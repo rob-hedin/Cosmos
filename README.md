@@ -59,6 +59,7 @@ xcodebuild -scheme CosmosDemo \
   -derivedDataPath ../../.build/demo-ios build -quiet
 xcrun simctl install "iPhone 18 Pro" ../../.build/demo-ios/Build/Products/Debug-iphonesimulator/CosmosDemo.app
 xcrun simctl launch "iPhone 18 Pro" com.rob-hedin.CosmosDemo                  # the star field
+xcrun simctl terminate "iPhone 18 Pro" com.rob-hedin.CosmosDemo               # launching a running app ignores new arguments
 xcrun simctl launch "iPhone 18 Pro" com.rob-hedin.CosmosDemo --solar-system   # the Solar System
 ```
 

@@ -11,24 +11,27 @@ public struct StarFieldScene: Scene {
     private let title: String
     private let focus: StarFieldFocus?
     private let route: [String]
+    private let filter: StarFilter
 
-    /// Opens on `focus` if given, otherwise frames `route`; see ``StarFieldView``.
-    public init(title: String = "Stars", focus: StarFieldFocus? = nil, route: [String] = []) {
+    /// Opens on `focus` if given, otherwise frames `route`, showing the stars `filter` lets
+    /// through; see ``StarFieldView``.
+    public init(title: String = "Stars", focus: StarFieldFocus? = nil, route: [String] = [], filter: StarFilter = .all) {
         self.title = title
         self.focus = focus
         self.route = route
+        self.filter = filter
     }
 
     public var body: some Scene {
         #if os(macOS)
         WindowGroup(title) {
-            StarFieldBrowser(focus: focus, route: route)
+            StarFieldBrowser(focus: focus, route: route, filter: filter)
                 .frame(minWidth: 480, minHeight: 360)
         }
         .defaultSize(width: 1_000, height: 750)
         #else
         WindowGroup(title) {
-            StarFieldBrowser(focus: focus, route: route)
+            StarFieldBrowser(focus: focus, route: route, filter: filter)
         }
         #endif
     }
@@ -48,10 +51,12 @@ public enum StarFieldWindow {
         sizeMode: StarSizeMode = .luminosity,
         title: String = "Stars",
         focus: StarFieldFocus? = nil,
-        route: [String] = []
+        route: [String] = [],
+        filter: StarFilter = .all
     ) -> NSWindow {
-        let content = catalog.map { StarFieldView(catalog: $0, sizeMode: sizeMode, focus: focus, route: route) }
-            ?? StarFieldView(sizeMode: sizeMode, focus: focus, route: route)
+        let content = catalog.map {
+            StarFieldView(catalog: $0, sizeMode: sizeMode, focus: focus, route: route, filter: filter)
+        } ?? StarFieldView(sizeMode: sizeMode, focus: focus, route: route, filter: filter)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1_000, height: 750),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],

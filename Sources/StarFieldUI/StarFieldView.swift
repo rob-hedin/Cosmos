@@ -13,6 +13,7 @@ import SwiftUI
 /// Pass a `focus` to open centered on a star at a given span in light years, or a `route` of
 /// star names to draw lines between them in order, list each leg's distance in a tile, and
 /// frame all the stops around the first one. A focus, when given, decides the view instead.
+/// Pass a `filter` to show only some stars; the selected star and route stops always show.
 public struct StarFieldView: View {
     private let source: Result<StarCatalog, any Error>
     private let sizeMode: StarSizeMode
@@ -22,6 +23,9 @@ public struct StarFieldView: View {
     private let showsReferenceRings: Bool
     private let focus: StarFieldFocus?
     private let routeNames: [String]
+    private let filter: StarFilter
+    /// Set by `StarFieldBrowser` to glide to a star it found.
+    var flightRequest: FlightRequest?
 
     @State private var renderer: StarRenderer?
     @State private var failure: (any Error)?
@@ -41,7 +45,8 @@ public struct StarFieldView: View {
         showsLabels: Bool = true,
         showsReferenceRings: Bool = true,
         focus: StarFieldFocus? = nil,
-        route: [String] = []
+        route: [String] = [],
+        filter: StarFilter = .all
     ) {
         self.source = Self.bundledCatalog
         self.sizeMode = sizeMode
@@ -51,6 +56,7 @@ public struct StarFieldView: View {
         self.showsReferenceRings = showsReferenceRings
         self.focus = focus
         self.routeNames = route
+        self.filter = filter
     }
 
     public init(
@@ -61,7 +67,8 @@ public struct StarFieldView: View {
         showsLabels: Bool = true,
         showsReferenceRings: Bool = true,
         focus: StarFieldFocus? = nil,
-        route: [String] = []
+        route: [String] = [],
+        filter: StarFilter = .all
     ) {
         self.source = .success(catalog)
         self.sizeMode = sizeMode
@@ -71,10 +78,11 @@ public struct StarFieldView: View {
         self.showsReferenceRings = showsReferenceRings
         self.focus = focus
         self.routeNames = route
+        self.filter = filter
     }
 
     /// Parsed once and shared, so recreating the view doesn't re-read the CSV.
-    private static let bundledCatalog = Result { try StarCatalog.bundled() }
+    static let bundledCatalog = Result { try StarCatalog.bundled() }
 
     private var catalog: StarCatalog? {
         try? source.get()
@@ -142,6 +150,11 @@ public struct StarFieldView: View {
             let route = resolveRoute()
             self.route = route
             if let renderer { aim(renderer, route: route, animated: true) }
+        }
+        .onChange(of: filter) { renderer?.filter = filter }
+        .onChange(of: flightRequest) {
+            guard let renderer, let flightRequest else { return }
+            renderer.fly(to: flightRequest.position, distance: min(renderer.camera.distance, 20))
         }
         .onChange(of: focus) {
             if let renderer { aim(renderer, route: route, animated: true) }
@@ -212,6 +225,7 @@ public struct StarFieldView: View {
             renderer.showsSunMarker = true
             renderer.selectedStarID = selection.wrappedValue
             renderer.labelExclusions = labelExclusions
+            renderer.filter = filter
             let route = resolveRoute()
             self.route = route
             aim(renderer, route: route, animated: false)
@@ -221,6 +235,20 @@ public struct StarFieldView: View {
             renderer = nil
             failure = error
         }
+    }
+}
+
+/// A request to glide to a point; a new `serial` repeats the flight to the same place.
+struct FlightRequest: Equatable {
+    let position: SIMD3<Float>
+    let serial: Int
+}
+
+extension StarFieldView {
+    func flying(to request: FlightRequest?) -> StarFieldView {
+        var view = self
+        view.flightRequest = request
+        return view
     }
 }
 

@@ -18,12 +18,17 @@ public enum StarCatalogError: Error, Equatable {
 public struct StarCatalog: Sendable, Equatable {
     public let stars: [Star]
     private let indexByID: [Star.ID: Int]
+    let multipleSystemIDs: Set<Star.ID>
+    /// `searchKey` of each star's name, in `stars` order.
+    let searchNames: [String]
 
     /// Stars may come in any order, and their IDs need not match their positions (a filtered or
     /// reordered catalog keeps the original IDs). If IDs repeat, the first star with an ID wins.
     public init(stars: [Star]) {
         self.stars = stars
         indexByID = Dictionary(stars.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        multipleSystemIDs = Self.findMultipleSystems(in: stars)
+        searchNames = stars.map { Self.searchKey($0.name) }
     }
 
     /// The 11,975 stars within 200 light years that ship with the package.

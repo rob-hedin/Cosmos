@@ -39,3 +39,44 @@ public enum StarPicker {
             .index
     }
 }
+
+extension StarPicker {
+    /// What a click or tap hit: a star (an index into `positions`) or the Sun marker at the origin.
+    public enum Hit: Equatable, Sendable {
+        case star(Int)
+        case sun
+    }
+
+    /// Like `nearest(to:in:radii:camera:viewportSize:maxDistance:)`, but also considers the Sun
+    /// marker. The marker is a disc of radius `sunRadius` points at the origin, and it takes part in
+    /// the same distance and tie rules as a star of that radius at the origin. Returns nil when
+    /// nothing is within `maxDistance`.
+    ///
+    /// A star with no radius in `radii` counts as radius 0, as in `nearest`; the Sun always keeps
+    /// `sunRadius`.
+    public static func nearestHit(
+        to point: SIMD2<Float>,
+        in positions: [SIMD3<Float>],
+        radii: [Float]? = nil,
+        sunRadius: Float,
+        camera: OrbitCamera,
+        viewportSize: SIMD2<Float>,
+        maxDistance: Float = 20
+    ) -> Hit? {
+        // Give the Sun the radius at its own index, whatever length `radii` has.
+        let starRadii = (0..<positions.count).map { index in
+            radii.map { index < $0.count ? $0[index] : 0 } ?? 0
+        }
+        let sunIndex = positions.count
+        let nearestIndex = nearest(
+            to: point,
+            in: positions + [.zero],
+            radii: starRadii + [sunRadius],
+            camera: camera,
+            viewportSize: viewportSize,
+            maxDistance: maxDistance
+        )
+        guard let nearestIndex else { return nil }
+        return nearestIndex == sunIndex ? .sun : .star(nearestIndex)
+    }
+}

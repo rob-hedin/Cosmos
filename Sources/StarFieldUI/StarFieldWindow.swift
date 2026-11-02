@@ -16,10 +16,13 @@ public struct StarFieldScene: Scene {
     private let showsToolbar: Bool
     private let showsRouteBuilder: Bool
     private let showsConstellationsButton: Bool
+    private let planetarySystems: PlanetarySystemDirectory
 
     /// Opens on `focus` if given, otherwise frames `route`, showing the stars `filter` lets
     /// through; see ``StarFieldView``. Pass `showsRouteBuilder: false` to leave out the route
-    /// builder, or `showsToolbar: false` to leave out the controls altogether.
+    /// builder, or `showsToolbar: false` to leave out the controls altogether. Pass
+    /// `planetarySystems` to choose which stars offer a planetary system; it defaults to the
+    /// built-in Solar System.
     public init(
         title: String = "Stars",
         focus: StarFieldFocus? = nil,
@@ -28,7 +31,8 @@ public struct StarFieldScene: Scene {
         showsConstellations: Bool = false,
         showsToolbar: Bool = true,
         showsRouteBuilder: Bool = true,
-        showsConstellationsButton: Bool = true
+        showsConstellationsButton: Bool = true,
+        planetarySystems: PlanetarySystemDirectory = .builtIn
     ) {
         self.title = title
         self.showsConstellations = showsConstellations
@@ -38,13 +42,14 @@ public struct StarFieldScene: Scene {
         self.showsToolbar = showsToolbar
         self.showsRouteBuilder = showsRouteBuilder
         self.showsConstellationsButton = showsConstellationsButton
+        self.planetarySystems = planetarySystems
     }
 
     private var browser: StarFieldBrowser {
         StarFieldBrowser(
             focus: focus, route: route, filter: filter, showsConstellations: showsConstellations,
             showsToolbar: showsToolbar, showsRouteBuilder: showsRouteBuilder,
-            showsConstellationsButton: showsConstellationsButton
+            showsConstellationsButton: showsConstellationsButton, planetarySystems: planetarySystems
         )
     }
 
@@ -72,7 +77,9 @@ public enum StarFieldWindow {
     /// Opens a new window showing the catalog, with the same controls as `StarFieldScene`, and
     /// returns it. Pass `focus` to open centered on a star at a span in light years, or `route` to
     /// draw and frame a list of stars. Pass `showsRouteBuilder: false` to leave out the route
-    /// builder, or `showsToolbar: false` for no controls. The window releases itself when closed.
+    /// builder, or `showsToolbar: false` for no controls. Pass `planetarySystems` to choose which
+    /// stars offer a planetary system on their info card; it defaults to the built-in Solar System.
+    /// The window releases itself when closed.
     @discardableResult
     public static func open(
         catalog: StarCatalog? = nil,
@@ -84,13 +91,14 @@ public enum StarFieldWindow {
         showsConstellations: Bool = false,
         showsToolbar: Bool = true,
         showsRouteBuilder: Bool = true,
-        showsConstellationsButton: Bool = true
+        showsConstellationsButton: Bool = true,
+        planetarySystems: PlanetarySystemDirectory = .builtIn
     ) -> NSWindow {
         let content = StarFieldBrowser(
             catalog: catalog, sizeMode: sizeMode, focus: focus, route: route, filter: filter,
             showsConstellations: showsConstellations,
             showsToolbar: showsToolbar, showsRouteBuilder: showsRouteBuilder,
-            showsConstellationsButton: showsConstellationsButton
+            showsConstellationsButton: showsConstellationsButton, planetarySystems: planetarySystems
         )
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1_000, height: 750),

@@ -13,7 +13,8 @@ import SwiftUI
 ///
 /// `scale`, `speed`, `isPaused` and `showsLabels` are starting values; the controls change them,
 /// and passing different values later makes the view adopt them. Pass a `selection` binding to
-/// read or set the selected item from your app.
+/// read or set the selected item from your app. Names keep clear of anything you overlay and
+/// report with `starFieldLabelObstacles(_:)`.
 public struct PlanetarySystemView: View {
     private let source: Result<PlanetarySystem, any Error>
     private let externalSelection: Binding<PlanetarySystemItem?>?
@@ -35,6 +36,7 @@ public struct PlanetarySystemView: View {
     @State private var viewFrame: CGRect = .zero
     @State private var cardFrame: CGRect?
     @State private var controlsFrame: CGRect?
+    @Environment(\.starFieldLabelObstacles) private var labelObstacles
 
     /// Shows `system`.
     public init(
@@ -169,10 +171,11 @@ public struct PlanetarySystemView: View {
         .onChange(of: showsLabelsParameter) { showsLabels = showsLabelsParameter }
     }
 
-    /// The info card's and the controls' frames, relative to the view's safe-area frame (which is
-    /// what SwiftUI reports for it, even though the Metal view extends under the title bar).
+    /// The info card's and the controls' frames, and any `starFieldLabelObstacles` you overlay,
+    /// relative to the view's safe-area frame (which is what SwiftUI reports for it, even though
+    /// the Metal view extends under the title bar).
     private var labelExclusions: [LabelLayout.Rect] {
-        [cardFrame, controlsFrame].compactMap { $0 }.map { frame in
+        ([cardFrame, controlsFrame].compactMap { $0 } + labelObstacles).map { frame in
             LabelLayout.Rect(
                 origin: SIMD2(Float(frame.minX - viewFrame.minX), Float(frame.minY - viewFrame.minY)),
                 size: SIMD2(Float(frame.width), Float(frame.height))

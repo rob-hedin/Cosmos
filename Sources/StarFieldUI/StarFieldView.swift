@@ -15,6 +15,12 @@ import SwiftUI
 /// star names to draw lines between them in order, list each leg's distance in a tile, and
 /// frame all the stops around the first one. A focus, when given, decides the view instead.
 /// Pass a `filter` to show only some stars; the selected star and route stops always show.
+///
+/// The Sun can be selected too: click its marker, or pick it from search. Its ID is `Star.sunID`.
+/// When the selected star has a Planetary System in `planetarySystems`, its info card gets a
+/// "Show planetary system" button. On the Mac the button opens a `PlanetarySystemWindow`; on iPhone
+/// and iPad it shows the system full screen. `planetarySystems` defaults to the built-in Solar
+/// System, which belongs to the Sun; pass `.empty` for no buttons, or a directory that adds your own.
 public struct StarFieldView: View {
     private let source: Result<StarCatalog, any Error>
     private let sizeMode: StarSizeMode
@@ -26,6 +32,7 @@ public struct StarFieldView: View {
     private let focus: StarFieldFocus?
     private let routeNames: [String]
     private let filter: StarFilter
+    private let planetarySystems: PlanetarySystemDirectory
     /// Set by `StarFieldBrowser` to glide to a star it found.
     var flightRequest: FlightRequest?
     /// Set by `StarFieldBrowser` while the user builds a route.
@@ -41,6 +48,10 @@ public struct StarFieldView: View {
     @State private var tileFrame: CGRect?
     /// The user cleared the route passed in; a new `route` brings it back.
     @State private var isRouteCleared = false
+    #if !os(macOS)
+    /// The system shown full screen from the info card.
+    @State private var presentedSystem: PresentedPlanetarySystem?
+    #endif
     @Environment(\.starFieldLabelObstacles) private var labelObstacles
 
     /// Shows the bundled catalog of stars within 200 light years.
@@ -53,7 +64,8 @@ public struct StarFieldView: View {
         showsConstellations: Bool = false,
         focus: StarFieldFocus? = nil,
         route: [String] = [],
-        filter: StarFilter = .all
+        filter: StarFilter = .all,
+        planetarySystems: PlanetarySystemDirectory = .builtIn
     ) {
         self.source = Self.bundledCatalog
         self.sizeMode = sizeMode
@@ -65,6 +77,7 @@ public struct StarFieldView: View {
         self.focus = focus
         self.routeNames = route
         self.filter = filter
+        self.planetarySystems = planetarySystems
     }
 
     public init(
@@ -77,7 +90,8 @@ public struct StarFieldView: View {
         showsConstellations: Bool = false,
         focus: StarFieldFocus? = nil,
         route: [String] = [],
-        filter: StarFilter = .all
+        filter: StarFilter = .all,
+        planetarySystems: PlanetarySystemDirectory = .builtIn
     ) {
         self.source = .success(catalog)
         self.sizeMode = sizeMode
@@ -89,6 +103,7 @@ public struct StarFieldView: View {
         self.focus = focus
         self.routeNames = route
         self.filter = filter
+        self.planetarySystems = planetarySystems
     }
 
     /// Parsed once and shared, so recreating the view doesn't re-read the CSV.
@@ -104,7 +119,20 @@ public struct StarFieldView: View {
 
     private var selectedStar: Star? {
         guard let id = selection.wrappedValue else { return nil }
+        if id == Star.sunID { return .sun }
         return renderer?.catalog.star(withID: id)
+    }
+
+    /// The action for the info card's "Show planetary system" button, when `star` has a system.
+    private func showPlanetarySystemAction(for star: Star) -> (() -> Void)? {
+        guard let system = planetarySystems.system(for: star) else { return nil }
+        return {
+            #if os(macOS)
+            PlanetarySystemWindow.open(system: system)
+            #else
+            presentedSystem = PresentedPlanetarySystem(system: system)
+            #endif
+        }
     }
 
     public var body: some View {
@@ -116,7 +144,8 @@ public struct StarFieldView: View {
                     description: Text(String(describing: failure))
                 )
             } else if let renderer {
-                MetalStarView(renderer: renderer) { star in
+                // Route mode clicks stars only: the Sun can't be a stop by clicking it.
+                MetalStarView(renderer: renderer, picksSun: routeEditing?.onStarClick == nil) { star in
                     if let onStarClick = routeEditing?.onStarClick {
                         onStarClick(star)
                     } else {
@@ -127,9 +156,11 @@ public struct StarFieldView: View {
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { starViewFrame = $0 }
                 .overlay(alignment: .bottomLeading) {
                     if showsInfoCard, let selectedStar {
-                        StarInfoCard(star: selectedStar) {
-                            selection.wrappedValue = nil
-                        }
+                        StarInfoCard(
+                            star: selectedStar,
+                            onClose: { selection.wrappedValue = nil },
+                            onShowPlanetarySystem: showPlanetarySystemAction(for: selectedStar)
+                        )
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { cardFrame = $0 }
                         .onDisappear { cardFrame = nil }
                         .padding()
@@ -184,6 +215,11 @@ public struct StarFieldView: View {
         .onChange(of: focus) {
             if let renderer { aim(renderer, route: route, animated: true) }
         }
+        #if !os(macOS)
+        .fullScreenCover(item: $presentedSystem) { presented in
+            PlanetarySystemCover(system: presented.system)
+        }
+        #endif
     }
 
     /// The route on screen: one the user is building, else the one passed in unless cleared.
@@ -320,8 +356,9 @@ extension EnvironmentValues {
 }
 
 extension View {
-    /// Keeps star names in the `StarFieldView`s inside this view clear of the given regions,
-    /// such as controls you overlay on the star field. Frames are in global coordinates.
+    /// Keeps star and planetary system names in the `StarFieldView`s and `PlanetarySystemView`s
+    /// inside this view clear of the given regions, such as controls you overlay on them. Frames
+    /// are in global coordinates.
     public func starFieldLabelObstacles(_ frames: [CGRect]) -> some View {
         environment(\.starFieldLabelObstacles, frames)
     }
@@ -330,6 +367,8 @@ extension View {
 /// Hosts an MTKView driven by a StarRenderer.
 struct MetalStarView {
     let renderer: StarRenderer
+    /// Whether a click can pick the Sun marker. Off in route mode, where only stars are stops.
+    let picksSun: Bool
     let onSelect: @MainActor (Star?) -> Void
 
     /// Distance to orbit a star from after double-clicking it, in light years.
@@ -351,16 +390,22 @@ struct MetalStarView {
         }
     }
 
-    /// A click selects the star under the pointer, or deselects on empty space. A double-click
-    /// flies to the star, or resets the view on empty space.
+    /// A click selects the star under the pointer, or the Sun if its marker is the nearest hit, or
+    /// deselects on empty space. A double-click flies to the star, or resets the view on empty space.
     @MainActor
     private func configure(_ view: InteractiveMetalView) {
         let renderer = renderer
         let onSelect = onSelect
+        let picksSun = picksSun
         view.controller = renderer
         view.onClick = { [weak view] point, tolerance in
             guard let view else { return }
-            onSelect(renderer.star(at: point, viewSize: view.bounds.size, tolerance: tolerance))
+            let size = view.bounds.size
+            onSelect(
+                picksSun
+                    ? renderer.starOrSun(at: point, viewSize: size, tolerance: tolerance)
+                    : renderer.star(at: point, viewSize: size, tolerance: tolerance)
+            )
         }
         view.onDoubleClick = { [weak view] point, tolerance in
             guard let view else { return }

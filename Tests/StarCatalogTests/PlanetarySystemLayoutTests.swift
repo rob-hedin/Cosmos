@@ -78,7 +78,8 @@ import Testing
         )
         let eris = try #require(system.body(named: "Eris"))
         let erisRadius = try #require(layout.orbitRadius(of: eris))
-        #expect(abs(erisRadius - PlanetarySystemLayout.systemRadius) < 1e-9)
+        let erisApoapsis = layout.sceneDistance(ofTrueDistance: eris.orbit.distance * (1 + eris.orbit.eccentricity), around: .centralStar)
+        #expect(abs(erisApoapsis - PlanetarySystemLayout.systemRadius) < 1e-9)
         #expect(abs(erisRadius - PlanetarySystemLayout.systemRadius * pow(eris.orbit.distance / reach, PlanetarySystemLayout.distanceExponent)) < 1e-9)
     }
 
@@ -147,7 +148,7 @@ import Testing
             guard body.parent == .body("Jupiter") else { return body }
             return Body(
                 name: body.name, kind: body.kind, parent: body.parent,
-                orbit: Orbit(distance: body.orbit.distance * 2, period: body.orbit.period,
+                orbit: Orbit(distance: body.orbit.distance * 2, period: original.orbitalPeriod(of: body),
                              eccentricity: body.orbit.eccentricity, inclination: body.orbit.inclination,
                              startingAngle: body.orbit.startingAngle),
                 radius: body.radius, mass: body.mass, color: body.color

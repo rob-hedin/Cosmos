@@ -319,6 +319,7 @@ import StarCatalog
         state.step(to: PlanetarySceneState.flightDuration + 0.01)
         #expect(state.followed == .body("Jupiter"))
         state.clock.isPaused = true
+        state.camera.rotate(by: SIMD2(0, -0.35))
 
         let moonNames = ["Io", "Europa", "Ganymede", "Callisto"]
         var checkedVisible: Set<String> = []
@@ -377,19 +378,21 @@ import StarCatalog
 
     @Test func candidatesExistForEachOnScreenEntryAndSelectedItemIsPinned() throws {
         let system = try PlanetarySystem.solarSystem()
-        let state = PlanetarySceneState(system: system)
+        var state = PlanetarySceneState(system: system)
+        state.fly(to: .body("Jupiter"), at: 0)
+        state.step(to: PlanetarySceneState.flightDuration + 0.01)
         let snapshot = state.snapshot()
         let sizes = Array(repeating: SIMD2<Float>(40, 12), count: snapshot.entries.count)
         let candidates = PlanetaryLabels.candidates(
             for: snapshot, in: system, camera: state.camera, viewportSize: viewport,
-            labelSizes: sizes, minimumPointRadius: state.minimumPointRadius, selection: .body("Earth")
+            labelSizes: sizes, minimumPointRadius: state.minimumPointRadius, selection: .body("Jupiter")
         )
         let expectedIDs = snapshot.entries.enumerated().compactMap { index, entry -> Int? in
             guard let point = state.camera.project(entry.position, viewportSize: viewport), isOnScreen(point, viewport: viewport) else { return nil }
             return index
         }
         #expect(candidates.map(\.id).sorted() == expectedIDs.sorted())
-        let selected = try #require(candidates.first { $0.id == index(of: .body("Earth"), in: snapshot) })
+        let selected = try #require(candidates.first { $0.id == index(of: .body("Jupiter"), in: snapshot) })
         #expect(selected.isPinned)
     }
 
@@ -400,7 +403,7 @@ import StarCatalog
         let candidates = PlanetaryLabels.candidates(
             for: snapshot, in: system, camera: state.camera, viewportSize: viewport,
             labelSizes: Array(repeating: SIMD2<Float>(30, 10), count: snapshot.entries.count),
-            minimumPointRadius: state.minimumPointRadius, selection: nil
+            minimumPointRadius: state.minimumPointRadius, selection: .body("Io")
         )
         func priorities(where predicate: (PlanetarySceneSnapshot.Entry) -> Bool) -> [Float] {
             candidates.compactMap { candidate in

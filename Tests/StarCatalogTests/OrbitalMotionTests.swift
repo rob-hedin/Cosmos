@@ -17,7 +17,7 @@ import Testing
         let orbit = Orbit(distance: 2, period: 8)
         #expect(distance(orbit.offset(atDay: 0, period: 8), SIMD3(2, 0, 0)) < 1e-12)
         #expect(distance(orbit.offset(atDay: 2, period: 8), SIMD3(0, 2, 0)) < 1e-12)
-        #expect(distance(orbit.offset(atDay: 100, period: 8), orbit.offset(atDay: 0, period: 8)) < 1e-12)
+        #expect(distance(orbit.offset(atDay: 96, period: 8), orbit.offset(atDay: 0, period: 8)) < 1e-12)
     }
 
     @Test func eccentricOrbitStartsAtPeriapsisAndMovesFasterThere() {

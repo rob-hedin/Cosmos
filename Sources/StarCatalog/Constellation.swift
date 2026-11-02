@@ -62,27 +62,3 @@ public struct Constellation: Sendable, Hashable, Identifiable {
         }
     }
 }
-
-extension StarCatalog {
-    /// The star nearest `sky`, within `toleranceDegrees`, such as the catalog star at one point
-    /// of a constellation figure. Nil when the point's star lies beyond the catalog. The figures'
-    /// points match their catalog stars to within 0.005°, while the nearest unrelated star is
-    /// 0.09° away, so the default tolerance doesn't substitute a neighbor for a missing star.
-    public func star(near sky: SkyPosition, toleranceDegrees: Double = 0.02, magnitudeLimit: Double = 7) -> Star? {
-        let target = sky.direction
-        var best: (star: Star, cosine: Double)?
-        let threshold = cos(toleranceDegrees * .pi / 180)
-        for star in stars where star.apparentMagnitude < magnitudeLimit {
-            // From RA and Dec in Double: the Float position can't tell apart close pairs such as
-            // Mizar and its companion row 0.005° away.
-            let direction = Astrophysics.position(
-                rightAscensionHours: star.rightAscensionHours, declinationDegrees: star.declinationDegrees,
-                distanceLightYears: 1
-            )
-            let cosine = (direction * target).sum()
-            guard cosine.isFinite, cosine >= threshold, cosine > best?.cosine ?? -2 else { continue }
-            best = (star, cosine)
-        }
-        return best?.star
-    }
-}

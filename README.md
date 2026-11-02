@@ -75,12 +75,9 @@ swift run CosmosDemo --route "Sol, Alpha Centauri, Sirius"
 
 ### Constellations
 
-The star button in the controls draws the 88 constellation figures, with their names, in one of two ways:
+The Constellations toggle draws the 88 constellation figures, with their names, as seen from Earth: on a sphere 200 ly around the Sun, by each star's direction alone, so the figures are complete even where their stars lie far beyond the catalog (most of Orion, Deneb, Polaris). Zoom in toward the Sun and they look as they do in the night sky.
 
-- **Between catalog stars (3D):** lines join the figures' stars at their real positions, so you can see how far apart in depth a constellation's stars are. Many figure stars lie beyond 200 ly, though (most of Orion, Deneb, Polaris, Antares, the Southern Cross), so only segments between catalog stars are drawn and many figures are incomplete.
-- **As seen from Earth:** complete figures on a sphere 200 ly around the Sun, by each star's direction alone. From inside the sphere they look as they do in the night sky.
-
-From code, pass `constellations: .catalogStars` or `.skySphere` to `StarFieldView`, `StarFieldBrowser`, `StarFieldScene` or `StarFieldWindow.open`, or run the demo with `--constellations 3d` or `--constellations sky`. The figures come from [d3-celestial](https://github.com/ofrohn/d3-celestial) (BSD license, see `Sources/StarCatalog/Resources/constellations-LICENSE.txt`).
+From code, pass `showsConstellations: true` to `StarFieldView`, `StarFieldBrowser`, `StarFieldScene` or `StarFieldWindow.open`, or run the demo with `--constellations`. Pass `showsConstellationsButton: false` to leave the toggle out of the controls. The figures come from [d3-celestial](https://github.com/ofrohn/d3-celestial) (BSD license, see `Sources/StarCatalog/Resources/constellations-LICENSE.txt`).
 
 ### Building a route
 

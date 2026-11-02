@@ -12,9 +12,10 @@ public struct StarFieldScene: Scene {
     private let focus: StarFieldFocus?
     private let route: [String]
     private let filter: StarFilter
-    private let constellations: ConstellationStyle
+    private let showsConstellations: Bool
     private let showsToolbar: Bool
     private let showsRouteBuilder: Bool
+    private let showsConstellationsButton: Bool
 
     /// Opens on `focus` if given, otherwise frames `route`, showing the stars `filter` lets
     /// through; see ``StarFieldView``. Pass `showsRouteBuilder: false` to leave out the route
@@ -24,23 +25,26 @@ public struct StarFieldScene: Scene {
         focus: StarFieldFocus? = nil,
         route: [String] = [],
         filter: StarFilter = .all,
-        constellations: ConstellationStyle = .off,
+        showsConstellations: Bool = false,
         showsToolbar: Bool = true,
-        showsRouteBuilder: Bool = true
+        showsRouteBuilder: Bool = true,
+        showsConstellationsButton: Bool = true
     ) {
         self.title = title
-        self.constellations = constellations
+        self.showsConstellations = showsConstellations
         self.focus = focus
         self.route = route
         self.filter = filter
         self.showsToolbar = showsToolbar
         self.showsRouteBuilder = showsRouteBuilder
+        self.showsConstellationsButton = showsConstellationsButton
     }
 
     private var browser: StarFieldBrowser {
         StarFieldBrowser(
-            focus: focus, route: route, filter: filter, constellations: constellations,
-            showsToolbar: showsToolbar, showsRouteBuilder: showsRouteBuilder
+            focus: focus, route: route, filter: filter, showsConstellations: showsConstellations,
+            showsToolbar: showsToolbar, showsRouteBuilder: showsRouteBuilder,
+            showsConstellationsButton: showsConstellationsButton
         )
     }
 
@@ -77,14 +81,16 @@ public enum StarFieldWindow {
         focus: StarFieldFocus? = nil,
         route: [String] = [],
         filter: StarFilter = .all,
-        constellations: ConstellationStyle = .off,
+        showsConstellations: Bool = false,
         showsToolbar: Bool = true,
-        showsRouteBuilder: Bool = true
+        showsRouteBuilder: Bool = true,
+        showsConstellationsButton: Bool = true
     ) -> NSWindow {
         let content = StarFieldBrowser(
             catalog: catalog, sizeMode: sizeMode, focus: focus, route: route, filter: filter,
-            constellations: constellations,
-            showsToolbar: showsToolbar, showsRouteBuilder: showsRouteBuilder
+            showsConstellations: showsConstellations,
+            showsToolbar: showsToolbar, showsRouteBuilder: showsRouteBuilder,
+            showsConstellationsButton: showsConstellationsButton
         )
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1_000, height: 750),

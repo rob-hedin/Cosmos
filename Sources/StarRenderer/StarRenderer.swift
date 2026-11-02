@@ -167,10 +167,10 @@ public final class StarRenderer: NSObject {
         didSet { requestRedraw() }
     }
 
-    /// How to draw the constellation figures, if at all.
-    public var constellationStyle: ConstellationStyle = .off {
+    /// Draws the constellation figures as seen from Earth, on a sphere around the Sun.
+    public var showsConstellations = false {
         didSet {
-            guard constellationStyle != oldValue else { return }
+            guard showsConstellations != oldValue else { return }
             rebuildConstellations()
             requestRedraw()
         }
@@ -181,7 +181,7 @@ public final class StarRenderer: NSObject {
         didSet { requestRedraw() }
     }
 
-    /// Radius of the sphere the `.skySphere` figures are drawn on, in light years.
+    /// Radius of the sphere the constellation figures are drawn on, in light years.
     public var skySphereRadius: Float = 200 {
         didSet {
             guard skySphereRadius != oldValue else { return }
@@ -274,13 +274,11 @@ public final class StarRenderer: NSObject {
     private static func ringLabelID(_ index: Int) -> Int { -2 - index }
     /// The constellation figures, loaded the first time they're shown.
     private lazy var constellations: [Constellation] = (try? Constellation.bundled()) ?? []
-    /// For each figure point, the catalog index of the star there, or nil beyond the catalog.
-    private var constellationStarIndex: [SkyPosition: Int?] = [:]
-    /// Line segments, two points each, for the current style.
+    /// Line segments, two points each.
     private var constellationLineBuffer: MTLBuffer?
     private var constellationLineCount = 0
-    /// Where each figure's name goes, by figure index; nil when the figure isn't drawn.
-    private var constellationLabelPoints: [SIMD3<Float>?] = []
+    /// Where each figure's name goes, by figure index.
+    private var constellationLabelPoints: [SIMD3<Float>] = []
     private lazy var constellationAtlas: LabelAtlas? = LabelAtlas(
         device: device, labels: constellations.enumerated().map { (id: $0.offset, text: $0.element.name) }, width: 1_024
     )
@@ -502,8 +500,6 @@ public final class StarRenderer: NSObject {
         }
         // The Sun, at the origin, so there is always a reference point.
         instances.append(StarInstance(positionSize: SIMD4(0, 0, 0, 0.6), color: SIMD4(1, 0.93, 0.82, 1)))
-        // Figures drawn between catalog stars leave out stars the filter hides.
-        if constellationStyle == .catalogStars { rebuildConstellations() }
 
         guard let buffer = device.makeBuffer(
             bytes: instances,
@@ -543,11 +539,8 @@ public final class StarRenderer: NSObject {
 
     private func rebuildConstellations() {
         var points: [SIMD4<Float>] = []
-        var labels: [SIMD3<Float>?] = []
-        switch constellationStyle {
-        case .off:
-            break
-        case .skySphere:
+        var labels: [SIMD3<Float>] = []
+        if showsConstellations {
             let radius = Double(skySphereRadius)
             for figure in constellations {
                 for line in figure.lines {
@@ -557,29 +550,6 @@ public final class StarRenderer: NSObject {
                     }
                 }
                 labels.append(SIMD3<Float>(figure.center.direction * radius))
-            }
-        case .catalogStars:
-            func shownStar(at sky: SkyPosition) -> Int? {
-                if constellationStarIndex[sky] == nil {
-                    constellationStarIndex[sky] = .some(catalog.star(near: sky).flatMap { catalog.index(ofStarWithID: $0.id) })
-                }
-                guard let index = constellationStarIndex[sky] ?? nil, isShown.isEmpty || isShown[index] else { return nil }
-                return index
-            }
-            for figure in constellations {
-                var sum = SIMD3<Float>.zero
-                var count = 0
-                for line in figure.lines {
-                    for (a, b) in zip(line, line.dropFirst()) {
-                        guard let i = shownStar(at: a), let j = shownStar(at: b), i != j else { continue }
-                        let (p, q) = (catalog.stars[i].position, catalog.stars[j].position)
-                        points.append(SIMD4(p, 1))
-                        points.append(SIMD4(q, 1))
-                        sum += p + q
-                        count += 2
-                    }
-                }
-                labels.append(count > 0 ? sum / Float(count) : nil)
             }
         }
         constellationLabelPoints = labels
@@ -649,7 +619,7 @@ public final class StarRenderer: NSObject {
             }
         }
 
-        if constellationStyle != .off, let constellationLineBuffer {
+        if showsConstellations, let constellationLineBuffer {
             var color = SIMD4(constellationColor, 1)
             encoder.setRenderPipelineState(linePipeline)
             encoder.setVertexBuffer(constellationLineBuffer, offset: 0, index: 0)
@@ -699,7 +669,7 @@ public final class StarRenderer: NSObject {
         }
 
         if showsLabels || showsReferenceRings || showsSunMarker || route?.stops.isEmpty == false
-            || constellationStyle != .off {
+            || showsConstellations {
             drawLabels(with: encoder, commandBuffer: commandBuffer, in: view, pixelsPerPoint: pixelsPerPoint)
         }
         encoder.endEncoding()
@@ -792,11 +762,11 @@ extension StarRenderer {
 
         // Constellation names rank after the brighter star names, and take at most a third of
         // the label slots, those nearest the middle of the view, so star names still show.
-        if constellationStyle != .off, let constellationAtlas {
+        if showsConstellations, let constellationAtlas {
             let color = SIMD4(simd_min(constellationColor * 3, SIMD3(repeating: 1)), 0.9)
             let middle = viewport / 2
             let names = constellationLabelPoints.enumerated()
-                .compactMap { index, point in point.flatMap(project).map { (index: index, anchor: $0) } }
+                .compactMap { index, point in project(point).map { (index: index, anchor: $0) } }
                 .sorted { simd_distance_squared($0.anchor, middle) < simd_distance_squared($1.anchor, middle) }
                 .prefix(max(maxLabels / 3, 1))
             for name in names {
@@ -957,16 +927,6 @@ private final class BufferPool: @unchecked Sendable {
             buffers.append(handoff.buffer)
         }
     }
-}
-
-/// How constellation figures are drawn.
-public enum ConstellationStyle: String, Sendable, Hashable, CaseIterable {
-    case off
-    /// Lines between the figures' stars at their real 3D positions. Stars beyond the catalog,
-    /// such as most of Orion, are missing, so many figures are incomplete.
-    case catalogStars
-    /// Complete figures as seen from Earth, drawn on a sphere around the Sun.
-    case skySphere
 }
 
 /// Planes through the Sun for reference rings, in the equatorial frame (+z toward the north pole).

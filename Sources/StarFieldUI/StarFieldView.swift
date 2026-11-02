@@ -9,7 +9,7 @@ import SwiftUI
 /// an info card. Pass a `selection` binding to read or set the selection from your app.
 /// Star names and reference rings at 50, 100 and 200 ly are shown by default; pass
 /// `showsLabels: false` or `showsReferenceRings: false` to hide them. The Sun is always marked.
-/// Pass `constellations` to draw the constellation figures.
+/// Pass `showsConstellations: true` to draw the constellation figures as seen from Earth.
 ///
 /// Pass a `focus` to open centered on a star at a given span in light years, or a `route` of
 /// star names to draw lines between them in order, list each leg's distance in a tile, and
@@ -22,7 +22,7 @@ public struct StarFieldView: View {
     private let showsInfoCard: Bool
     private let showsLabels: Bool
     private let showsReferenceRings: Bool
-    private let constellations: ConstellationStyle
+    private let showsConstellations: Bool
     private let focus: StarFieldFocus?
     private let routeNames: [String]
     private let filter: StarFilter
@@ -50,7 +50,7 @@ public struct StarFieldView: View {
         showsInfoCard: Bool = true,
         showsLabels: Bool = true,
         showsReferenceRings: Bool = true,
-        constellations: ConstellationStyle = .off,
+        showsConstellations: Bool = false,
         focus: StarFieldFocus? = nil,
         route: [String] = [],
         filter: StarFilter = .all
@@ -61,7 +61,7 @@ public struct StarFieldView: View {
         self.showsInfoCard = showsInfoCard
         self.showsLabels = showsLabels
         self.showsReferenceRings = showsReferenceRings
-        self.constellations = constellations
+        self.showsConstellations = showsConstellations
         self.focus = focus
         self.routeNames = route
         self.filter = filter
@@ -74,7 +74,7 @@ public struct StarFieldView: View {
         showsInfoCard: Bool = true,
         showsLabels: Bool = true,
         showsReferenceRings: Bool = true,
-        constellations: ConstellationStyle = .off,
+        showsConstellations: Bool = false,
         focus: StarFieldFocus? = nil,
         route: [String] = [],
         filter: StarFilter = .all
@@ -85,7 +85,7 @@ public struct StarFieldView: View {
         self.showsInfoCard = showsInfoCard
         self.showsLabels = showsLabels
         self.showsReferenceRings = showsReferenceRings
-        self.constellations = constellations
+        self.showsConstellations = showsConstellations
         self.focus = focus
         self.routeNames = route
         self.filter = filter
@@ -163,7 +163,7 @@ public struct StarFieldView: View {
         .onChange(of: sizeMode) { renderer?.sizeMode = sizeMode }
         .onChange(of: showsLabels) { renderer?.showsLabels = showsLabels }
         .onChange(of: showsReferenceRings) { renderer?.showsReferenceRings = showsReferenceRings }
-        .onChange(of: constellations) { renderer?.constellationStyle = constellations }
+        .onChange(of: showsConstellations) { renderer?.showsConstellations = showsConstellations }
         .onChange(of: selection.wrappedValue) { renderer?.selectedStarID = selection.wrappedValue }
         .onChange(of: labelExclusions) { renderer?.labelExclusions = labelExclusions }
         .onChange(of: routeNames) {
@@ -263,7 +263,7 @@ public struct StarFieldView: View {
             renderer.sizeMode = sizeMode
             renderer.showsLabels = showsLabels
             renderer.showsReferenceRings = showsReferenceRings
-            renderer.constellationStyle = constellations
+            renderer.showsConstellations = showsConstellations
             renderer.referenceRingPlanes = .all
             renderer.showsSunMarker = true
             renderer.selectedStarID = selection.wrappedValue

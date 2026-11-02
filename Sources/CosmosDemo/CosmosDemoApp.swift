@@ -9,7 +9,7 @@ import SwiftUI
 /// Options:
 /// - `--star NAME [--span LY]` opens centered on a star, `LY` light years across (default 20).
 /// - `--route "Sol, Alpha Centauri, Sirius"` draws a route between the stars and frames it.
-/// - `--constellations 3d` or `--constellations sky` draws the constellation figures.
+/// - `--constellations` draws the constellation figures; `--no-constellations-button` hides its toggle.
 /// - `--no-route-builder` leaves out the route builder; `--no-toolbar` leaves out all the controls.
 @main
 struct CosmosDemoApp: App {
@@ -25,8 +25,10 @@ struct CosmosDemoApp: App {
 
     var body: some Scene {
         StarFieldScene(
-            title: "Cosmos", focus: options.focus, route: options.route, constellations: options.constellations,
-            showsToolbar: options.showsToolbar, showsRouteBuilder: options.showsRouteBuilder
+            title: "Cosmos", focus: options.focus, route: options.route,
+            showsConstellations: options.showsConstellations,
+            showsToolbar: options.showsToolbar, showsRouteBuilder: options.showsRouteBuilder,
+            showsConstellationsButton: options.showsConstellationsButton
         )
     }
 }
@@ -36,7 +38,8 @@ struct DemoOptions {
     var focus: StarFieldFocus?
     var route: [String] = []
     var showsToolbar = true
-    var constellations = ConstellationStyle.off
+    var showsConstellations = false
+    var showsConstellationsButton = true
     var showsRouteBuilder = true
 
     init(arguments: [String]) {
@@ -50,11 +53,8 @@ struct DemoOptions {
             let span = value(after: "--span").flatMap(Double.init).flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 20
             focus = StarFieldFocus(star: star, span: span)
         }
-        switch value(after: "--constellations") {
-        case "3d": constellations = .catalogStars
-        case "sky": constellations = .skySphere
-        default: break
-        }
+        showsConstellations = arguments.contains("--constellations")
+        showsConstellationsButton = !arguments.contains("--no-constellations-button")
         showsToolbar = !arguments.contains("--no-toolbar")
         showsRouteBuilder = !arguments.contains("--no-route-builder")
         if let list = value(after: "--route") {

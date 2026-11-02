@@ -108,11 +108,6 @@ public struct StarCatalog: Sendable, Equatable {
         self.init(stars: stars)
     }
 
-    /// Where the star with the given ID sits in `stars`.
-    public func index(ofStarWithID id: Star.ID) -> Int? {
-        indexByID[id]
-    }
-
     /// The star with the given ID, wherever it sits in `stars`.
     public func star(withID id: Star.ID) -> Star? {
         indexByID[id].map { stars[$0] }

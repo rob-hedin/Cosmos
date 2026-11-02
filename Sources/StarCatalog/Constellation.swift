@@ -73,10 +73,14 @@ extension StarCatalog {
         var best: (star: Star, cosine: Double)?
         let threshold = cos(toleranceDegrees * .pi / 180)
         for star in stars where star.apparentMagnitude < magnitudeLimit {
-            let distance = star.distanceLightYears
-            guard distance > 0, distance.isFinite else { continue }
-            let cosine = (SIMD3<Double>(star.position) / distance * target).sum()
-            guard cosine >= threshold, cosine > best?.cosine ?? -2 else { continue }
+            // From RA and Dec in Double: the Float position can't tell apart close pairs such as
+            // Mizar and its companion row 0.005° away.
+            let direction = Astrophysics.position(
+                rightAscensionHours: star.rightAscensionHours, declinationDegrees: star.declinationDegrees,
+                distanceLightYears: 1
+            )
+            let cosine = (direction * target).sum()
+            guard cosine.isFinite, cosine >= threshold, cosine > best?.cosine ?? -2 else { continue }
             best = (star, cosine)
         }
         return best?.star

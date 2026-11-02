@@ -8,7 +8,7 @@ A Swift and Metal framework for macOS 27 and iOS/iPadOS 27 that shows the 11,975
 | --- | --- | --- |
 | `StarCatalog` | Done | Loads the bundled CSV; computes 3D positions (light years, Sun at origin, equatorial frame), luminosity, temperature, estimated radius, and blackbody color; size normalization for both size modes |
 | `StarRenderer` | First light | Metal renderer: one instanced draw of all stars with additive glow, Sun marker, `OrbitCamera` with rotate, zoom, pan, roll, reset and fling; picking, selection ring, fly-to, decluttered star names |
-| `StarFieldUI` | First light | SwiftUI `StarFieldView`, `StarFieldScene` (macOS and iOS), `StarFieldWindow.open()` (macOS), mouse, trackpad and touch input, selection binding, `StarInfoCard`, `StarFieldBrowser` with name and size controls. |
+| `StarFieldUI` | First light | SwiftUI `StarFieldView`, `StarFieldScene` (macOS and iOS), `StarFieldWindow.open()` (macOS), mouse, trackpad and touch input, selection binding, `StarInfoCard`, `StarFieldBrowser` with search, filters, and name and size controls. |
 
 ## Usage
 
@@ -71,6 +71,21 @@ The demo takes the same options:
 ```sh
 swift run CosmosDemo --star Vega --span 20
 swift run CosmosDemo --route "Sol, Alpha Centauri, Sirius"
+```
+
+### Search and filters
+
+The magnifying glass (⌘F) opens a search field that suggests stars as you type, by name, alias or HIP/HD number. Return or a click picks one: it's selected and the view glides to it.
+
+The filter button hides stars by distance from the Sun, spectral class (O to M, white dwarfs, other) and brightness (absolute magnitude), or shows only stars in double and multiple systems. The selected star and route stops always stay visible. The catalog has no multiplicity column, so a star counts as part of a system if its spectral type lists a companion, or if another star lies within 0.3 ly of it across the sky at a matching distance.
+
+From code, pass a filter, or filter the catalog yourself:
+
+```swift
+StarFieldView(filter: StarFilter(distance: 0...50, spectralClasses: [.g, .k]))
+StarFieldView(filter: StarFilter(brightestAbsoluteMagnitude: 0, multipleSystemsOnly: true))
+let bright = catalog.stars(matching: StarFilter(brightestAbsoluteMagnitude: 1))
+let matches = catalog.search("alpha cen")   // Rigil Kentaurus, Toliman, Proxima Centauri
 ```
 
 ## Data

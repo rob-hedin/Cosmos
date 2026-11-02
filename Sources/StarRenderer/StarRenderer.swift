@@ -55,7 +55,20 @@ public final class StarRenderer: NSObject {
 
     /// The star drawn with a highlight ring, by `Star.id`.
     public var selectedStarID: Star.ID? {
-        didSet { requestRedraw() }
+        didSet {
+            // The selected star is shown even when the filter would hide it.
+            if !filter.showsEverything, selectedStarID != oldValue { try? rebuildInstances() }
+            requestRedraw()
+        }
+    }
+
+    /// Which stars to draw, label and pick. The selected star and route stops are always shown.
+    public var filter: StarFilter = .all {
+        didSet {
+            guard filter != oldValue else { return }
+            try? rebuildInstances()
+            requestRedraw()
+        }
     }
 
     /// Diameter of the selection ring, in points.
@@ -159,6 +172,7 @@ public final class StarRenderer: NSObject {
         didSet {
             guard route != oldValue else { return }
             rebuildRoute()
+            if !filter.showsEverything { try? rebuildInstances() }
             requestRedraw()
         }
     }
@@ -197,8 +211,13 @@ public final class StarRenderer: NSObject {
 
     /// Star positions in catalog order, for picking.
     private let positions: [SIMD3<Float>]
+    /// Catalog indices of the stars that pass the filter (plus the selection and route stops).
+    private var shownIndices: [Int] = []
+    /// Per catalog index: whether the star is drawn.
+    private var isShown: [Bool] = []
     /// Normalized sizes for the current size mode, in catalog order.
     private var normalizedSizes: [Float] = []
+    private var normalizedSizeMode: StarSizeMode?
     /// Indices of stars with proper, Bayer or Flamsteed names.
     private let namedStarIndices: [Int]
 
@@ -342,12 +361,12 @@ public final class StarRenderer: NSObject {
     public func star(at point: CGPoint, viewSize: CGSize, tolerance: Float = 20) -> Star? {
         StarPicker.nearest(
             to: SIMD2(Float(point.x), Float(point.y)),
-            in: positions,
-            radii: positions.indices.map { drawnDiameter(ofStarAt: $0) / 2 },
+            in: shownIndices.map { positions[$0] },
+            radii: shownIndices.map { drawnDiameter(ofStarAt: $0) / 2 },
             camera: camera,
             viewportSize: SIMD2(Float(viewSize.width), Float(viewSize.height)),
             maxDistance: tolerance
-        ).map { catalog.stars[$0] }
+        ).map { catalog.stars[shownIndices[$0]] }
     }
 
     // MARK: Motion
@@ -432,12 +451,18 @@ public final class StarRenderer: NSObject {
     }
 
     private func rebuildInstances() throws {
-        let sizes = catalog.normalizedSizes(for: sizeMode)
-        normalizedSizes = sizes
-        var instances = zip(catalog.stars, sizes).map { star, size in
+        // Sizes are normalized over the whole catalog, so filtering doesn't resize the rest.
+        if normalizedSizes.count != catalog.stars.count || sizeMode != normalizedSizeMode {
+            normalizedSizes = catalog.normalizedSizes(for: sizeMode)
+            normalizedSizeMode = sizeMode
+        }
+        let alwaysShown = Set((route?.stops.compactMap(\.starID) ?? []) + [selectedStarID].compactMap { $0 })
+        isShown = catalog.stars.map { filter.showsEverything || alwaysShown.contains($0.id) || filter.includes($0, in: catalog) }
+        shownIndices = catalog.stars.indices.filter { isShown[$0] }
+        var instances = shownIndices.map { index in
             StarInstance(
-                positionSize: SIMD4(star.position, size),
-                color: SIMD4(star.color, 1)
+                positionSize: SIMD4(catalog.stars[index].position, normalizedSizes[index]),
+                color: SIMD4(catalog.stars[index].color, 1)
             )
         }
         // The Sun, at the origin, so there is always a reference point.
@@ -672,7 +697,7 @@ extension StarRenderer {
         if let atlas {
             for index in namedStarIndices {
                 let star = catalog.stars[index]
-                guard star.id != selectedStarID, !routeStarIDs.contains(star.id) else { continue }
+                guard isShown[index], star.id != selectedStarID, !routeStarIDs.contains(star.id) else { continue }
                 // Cheap magnitude test first, so faint stars skip projection.
                 let parsecs = max(simd_distance(star.position, eye), 0.001) * Self.parsecsPerLightYear
                 let apparent = Float(star.absoluteMagnitude) + 5 * log10(parsecs) - 5

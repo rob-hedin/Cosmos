@@ -70,7 +70,7 @@ public enum Astrophysics {
         return nil
     }
 
-    private static let classTemperatures: [Character: Double] = [
+    static let classTemperatures: [Character: Double] = [
         "O": 35_000, "B": 20_000, "A": 8_500, "F": 6_500, "G": 5_600,
         "K": 4_400, "M": 3_200, "L": 2_000, "T": 1_300, "D": 10_000,
     ]

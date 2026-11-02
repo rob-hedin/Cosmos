@@ -107,6 +107,17 @@ let bright = catalog.stars(matching: StarFilter(brightestAbsoluteMagnitude: 1))
 let matches = catalog.search("alpha cen")   // Rigil Kentaurus, Toliman, Proxima Centauri
 ```
 
+## Planetary systems
+
+`StarCatalog` also models planetary systems: a central star (the Sun, a catalog star, or one described from scratch), bodies (planets, dwarf planets, moons, asteroids, comets) that each orbit a parent, and belts. Build one from Swift values or load it from JSON. Building checks everything and throws one `PlanetarySystemError` listing every problem. Periods that aren't given come from Kepler's third law. The Solar System ships built in.
+
+```swift
+let solar = try PlanetarySystem.solarSystem()
+if let earth = solar.body(named: "Earth") {
+    let days = solar.orbitalPeriod(of: earth) // about 365.25
+}
+```
+
 ## Data
 
 `Sources/StarCatalog/Resources/stars.csv` is derived from the HYG database (stars within 200 ly). Temperatures come from B-V via the Ballesteros formula, falling back to spectral class and then the catalog color name. Radii are estimates from R ∝ √L / T².

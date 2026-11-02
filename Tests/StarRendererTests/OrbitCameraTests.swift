@@ -124,4 +124,46 @@ import Testing
         expected.fieldOfView = 1
         #expect(camera == expected)
     }
+
+    @Test func centeringShowsTheRequestedSpan() {
+        var camera = CameraFixtures.tilted
+        camera.center(on: SIMD3(3, 4, 5), span: 20)
+        #expect(camera.target == SIMD3(3, 4, 5))
+        #expect(abs(camera.span - 20) < 1e-3)
+        // A point 10 ly to the side of the target, in the view plane, lands on the shorter edge.
+        let edge = camera.target + camera.up * 10
+        let clip = camera.viewProjection(aspectRatio: 1) * SIMD4(edge, 1)
+        #expect(abs(clip.y / clip.w - 1) < 1e-3)
+    }
+
+    @Test func fittingPointsKeepsThemOnScreenAndTight() {
+        var camera = CameraFixtures.tilted
+        let points: [SIMD3<Float>] = [.zero, [4, -2, 1], [-9, 6, -3], [2, 8, 7]]
+        camera.fit(center: .zero, containing: points, margin: 1.1, minimumSpan: 1)
+        #expect(camera.target == .zero)
+        var largest: Float = 0
+        for point in points {
+            let clip = camera.viewProjection(aspectRatio: 1) * SIMD4(point, 1)
+            #expect(clip.w > 0)
+            let ndc = max(abs(clip.x / clip.w), abs(clip.y / clip.w))
+            #expect(ndc <= 1 / 1.1 + 1e-3)
+            largest = max(largest, ndc)
+        }
+        // ...and the farthest-out point nearly touches the margin.
+        #expect(largest > 1 / 1.1 - 1e-3)
+    }
+
+    @Test func fittingCoincidentPointsUsesTheMinimumSpan() {
+        var camera = OrbitCamera()
+        camera.fit(center: SIMD3(1, 1, 1), containing: [SIMD3(1, 1, 1)], minimumSpan: 12)
+        #expect(abs(camera.span - 12) < 1e-3)
+    }
+}
+
+private enum CameraFixtures {
+    static var tilted: OrbitCamera {
+        var camera = OrbitCamera()
+        camera.rotate(by: SIMD2(0.4, 0.3))
+        return camera
+    }
 }

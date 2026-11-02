@@ -9,21 +9,26 @@ import SwiftUI
 /// ```
 public struct StarFieldScene: Scene {
     private let title: String
+    private let focus: StarFieldFocus?
+    private let route: [String]
 
-    public init(title: String = "Stars") {
+    /// Opens on `focus` if given, otherwise frames `route`; see ``StarFieldView``.
+    public init(title: String = "Stars", focus: StarFieldFocus? = nil, route: [String] = []) {
         self.title = title
+        self.focus = focus
+        self.route = route
     }
 
     public var body: some Scene {
         #if os(macOS)
         WindowGroup(title) {
-            StarFieldBrowser()
+            StarFieldBrowser(focus: focus, route: route)
                 .frame(minWidth: 480, minHeight: 360)
         }
         .defaultSize(width: 1_000, height: 750)
         #else
         WindowGroup(title) {
-            StarFieldBrowser()
+            StarFieldBrowser(focus: focus, route: route)
         }
         #endif
     }
@@ -35,15 +40,18 @@ import AppKit
 /// Opens and manages a star field window from AppKit code, without a SwiftUI `App`.
 @MainActor
 public enum StarFieldWindow {
-    /// Opens a new window showing the catalog and returns it. The window releases itself when closed.
+    /// Opens a new window showing the catalog and returns it. Pass `focus` to open centered on a
+    /// star at a span in light years, or `route` to draw and frame a list of stars. The window releases itself when closed.
     @discardableResult
     public static func open(
         catalog: StarCatalog? = nil,
         sizeMode: StarSizeMode = .luminosity,
-        title: String = "Stars"
+        title: String = "Stars",
+        focus: StarFieldFocus? = nil,
+        route: [String] = []
     ) -> NSWindow {
-        let content = catalog.map { StarFieldView(catalog: $0, sizeMode: sizeMode) }
-            ?? StarFieldView(sizeMode: sizeMode)
+        let content = catalog.map { StarFieldView(catalog: $0, sizeMode: sizeMode, focus: focus, route: route) }
+            ?? StarFieldView(sizeMode: sizeMode, focus: focus, route: route)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1_000, height: 750),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],

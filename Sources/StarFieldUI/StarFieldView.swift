@@ -26,6 +26,8 @@ public struct StarFieldView: View {
     private let filter: StarFilter
     /// Set by `StarFieldBrowser` to glide to a star it found.
     var flightRequest: FlightRequest?
+    /// Set by `StarFieldBrowser` while the user builds a route.
+    var routeEditing: RouteEditing?
 
     @State private var renderer: StarRenderer?
     @State private var failure: (any Error)?
@@ -35,6 +37,8 @@ public struct StarFieldView: View {
     @State private var cardFrame: CGRect?
     @State private var route: StarRoute?
     @State private var tileFrame: CGRect?
+    /// The user cleared the route passed in; a new `route` brings it back.
+    @State private var isRouteCleared = false
     @Environment(\.starFieldLabelObstacles) private var labelObstacles
 
     /// Shows the bundled catalog of stars within 200 light years.
@@ -107,7 +111,11 @@ public struct StarFieldView: View {
                 )
             } else if let renderer {
                 MetalStarView(renderer: renderer) { star in
-                    selection.wrappedValue = star?.id
+                    if let onStarClick = routeEditing?.onStarClick {
+                        onStarClick(star)
+                    } else {
+                        selection.wrappedValue = star?.id
+                    }
                 }
                 .ignoresSafeArea()
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { starViewFrame = $0 }
@@ -123,8 +131,13 @@ public struct StarFieldView: View {
                 }
                 .overlay(alignment: .topLeading) {
                     let notFound = notFound
-                    if route?.stops.isEmpty == false || !notFound.isEmpty {
-                        StarRouteTile(route: route ?? StarRoute(stops: []), notFound: notFound)
+                    let shownRoute = shownRoute
+                    let hint = routeEditing?.hint
+                    if shownRoute?.stops.isEmpty == false || !notFound.isEmpty || hint != nil {
+                        StarRouteTile(
+                            route: shownRoute ?? StarRoute(stops: []), notFound: notFound, hint: hint,
+                            onUndo: routeEditing?.onUndo, onClear: clearRoute
+                        )
                             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { tileFrame = $0 }
                             .onDisappear { tileFrame = nil }
                             .padding()
@@ -149,8 +162,13 @@ public struct StarFieldView: View {
         .onChange(of: routeNames) {
             let route = resolveRoute()
             self.route = route
+            isRouteCleared = false
             if let renderer { aim(renderer, route: route, animated: true) }
+            renderer?.route = shownRoute(from: route)
         }
+        // Routes the user builds or clears keep the view where it is.
+        .onChange(of: routeEditing?.stops) { renderer?.route = shownRoute }
+        .onChange(of: isRouteCleared) { renderer?.route = shownRoute }
         .onChange(of: filter) { renderer?.filter = filter }
         .onChange(of: flightRequest) {
             guard let renderer, let flightRequest else { return }
@@ -161,9 +179,27 @@ public struct StarFieldView: View {
         }
     }
 
+    /// The route on screen: one the user is building, else the one passed in unless cleared.
+    private var shownRoute: StarRoute? { shownRoute(from: route) }
+
+    private func shownRoute(from passedRoute: StarRoute?) -> StarRoute? {
+        if let stops = routeEditing?.stops {
+            return stops.isEmpty ? nil : StarRoute(stops: stops)
+        }
+        return isRouteCleared ? nil : passedRoute
+    }
+
+    private func clearRoute() {
+        if let onClear = routeEditing?.onClear {
+            onClear()
+        } else {
+            isRouteCleared = true
+        }
+    }
+
     /// Names that matched nothing: the route's, then the focus star's.
     private var notFound: [String] {
-        var names = route?.unresolved ?? []
+        var names = shownRoute?.unresolved ?? []
         if let focus, catalog?.location(named: focus.star) == nil { names.append(focus.star) }
         return names
     }
@@ -187,7 +223,6 @@ public struct StarFieldView: View {
 
     /// Points the camera at the focus star or, without one, frames the route around its first stop.
     private func aim(_ renderer: StarRenderer, route: StarRoute?, animated: Bool) {
-        renderer.route = route
         var camera = renderer.camera
         if let focus, let location = renderer.catalog.location(named: focus.star) {
             camera.center(on: location.position, span: Float(focus.span))
@@ -229,6 +264,7 @@ public struct StarFieldView: View {
             let route = resolveRoute()
             self.route = route
             aim(renderer, route: route, animated: false)
+            renderer.route = shownRoute(from: route)
             self.renderer = renderer
             failure = nil
         } catch {
@@ -244,10 +280,28 @@ struct FlightRequest: Equatable {
     let serial: Int
 }
 
+/// How `StarFieldBrowser` takes over the route while the user builds one.
+struct RouteEditing {
+    /// The stops, replacing the route passed in. Nil leaves that route showing.
+    var stops: [StarLocation]?
+    /// Shown in the route tile, such as "Click stars to add stops".
+    var hint: String?
+    /// Replaces selecting on click.
+    var onStarClick: (@MainActor (Star?) -> Void)?
+    var onUndo: (@MainActor () -> Void)?
+    var onClear: (@MainActor () -> Void)?
+}
+
 extension StarFieldView {
     func flying(to request: FlightRequest?) -> StarFieldView {
         var view = self
         view.flightRequest = request
+        return view
+    }
+
+    func editingRoute(_ editing: RouteEditing?) -> StarFieldView {
+        var view = self
+        view.routeEditing = editing
         return view
     }
 }

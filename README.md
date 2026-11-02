@@ -8,7 +8,7 @@ A Swift and Metal framework for macOS 27 and iOS/iPadOS 27 that shows the 11,975
 | --- | --- | --- |
 | `StarCatalog` | Done | Loads the bundled CSV; computes 3D positions (light years, Sun at origin, equatorial frame), luminosity, temperature, estimated radius, and blackbody color; size normalization for both size modes |
 | `StarRenderer` | First light | Metal renderer: one instanced draw of all stars with additive glow, Sun marker, `OrbitCamera` with rotate, zoom, pan, roll, reset and fling; picking, selection ring, fly-to, decluttered star names |
-| `StarFieldUI` | First light | SwiftUI `StarFieldView`, `StarFieldScene` (macOS and iOS), `StarFieldWindow.open()` (macOS), mouse, trackpad and touch input, selection binding, `StarInfoCard`, `StarFieldBrowser` with search, filters, and name and size controls. |
+| `StarFieldUI` | First light | SwiftUI `StarFieldView`, `StarFieldScene` (macOS and iOS), `StarFieldWindow.open()` (macOS), mouse, trackpad and touch input, selection binding, `StarInfoCard`, `StarFieldBrowser` with search, filters, a route builder, and name and size controls. |
 
 ## Usage
 
@@ -71,6 +71,19 @@ The demo takes the same options:
 ```sh
 swift run CosmosDemo --star Vega --span 20
 swift run CosmosDemo --route "Sol, Alpha Centauri, Sirius"
+```
+
+### Building a route
+
+The route button turns on route mode: each star you click (or pick from search) becomes the next stop, and the lines and distance tile update as you go. The first stop starts a new route, replacing one passed in from code. Clicking a star that's already on the route asks whether to remove it or visit it again. The tile's undo button removes the last stop, and its clear button, shown whenever a route is on screen, removes the whole route. Turn route mode off to click stars normally; the route stays.
+
+### Hiding the controls
+
+`StarFieldScene`, `StarFieldBrowser` and `StarFieldWindow.open` take `showsRouteBuilder: false` to leave out the route builder, and `showsToolbar: false` to leave out the controls altogether (search, filters, route builder, names, rings and size):
+
+```swift
+StarFieldScene(showsRouteBuilder: false)
+StarFieldWindow.open(route: ["Sol", "Sirius"], showsToolbar: false)
 ```
 
 ### Search and filters

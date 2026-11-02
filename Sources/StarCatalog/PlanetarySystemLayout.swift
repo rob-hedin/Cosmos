@@ -40,7 +40,8 @@ public struct PlanetarySystemLayout: Sendable {
     /// No moon is drawn bigger than this share of its Parent.
     public static let maximumMoonToParentRatio = 0.5
     /// A Body as big as Earth is never drawn with a radius over this (scene units), so a small Body
-    /// on its own does not swell to fill its room. Bigger and smaller Bodies scale from it.
+    /// on its own does not swell to fill its room. Bigger and smaller Bodies scale from it. It only
+    /// matters in a sparse system: the Solar System's sizes stay below it (Earth is drawn at about 0.018).
     public static let maximumEarthSizedRadius = 0.05
     /// The star's radius is at most this share of the innermost periapsis.
     public static let starClearanceFraction = 0.5

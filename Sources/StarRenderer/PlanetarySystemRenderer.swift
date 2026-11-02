@@ -106,7 +106,10 @@ public final class PlanetarySystemRenderer: NSObject {
     private let commandQueue: MTLCommandQueue
     private let pipelines: Pipelines
     private let labelAtlas: LabelAtlas?
+    /// Instance data over 4 KB goes through pooled buffers, one pool per kind of instance.
     private let labelBufferPool = BufferPool()
+    private let sphereBufferPool = BufferPool()
+    private let beltBufferPool = BufferPool()
     private var labelInstances: [LabelInstance] = []
 
     /// Per Body, in `system.bodies` order: its linear color.
@@ -358,7 +361,7 @@ public final class PlanetarySystemRenderer: NSObject {
             minPointSize: 0, maxPointSize: 0, sizeExponent: 1, exposure: 1, saturation: 1
         )
 
-        drawBelts(with: encoder, snapshot: snapshot, uniforms: &uniforms)
+        drawBelts(with: encoder, commandBuffer: commandBuffer, snapshot: snapshot, uniforms: &uniforms)
         if showsOrbits {
             drawOrbits(with: encoder, snapshot: snapshot, uniforms: &uniforms)
         }
@@ -373,8 +376,9 @@ public final class PlanetarySystemRenderer: NSObject {
             pixelsPerPoint: pixelsPerPoint, uniforms: uniforms
         )
         drawSpheres(
-            with: encoder, snapshot: snapshot, camera: camera, drawableSize: drawableSize,
-            pixelsPerPoint: pixelsPerPoint, shortSide: shortSide, minimumRadius: minimumRadius, uniforms: uniforms
+            with: encoder, commandBuffer: commandBuffer, snapshot: snapshot, camera: camera,
+            drawableSize: drawableSize, pixelsPerPoint: pixelsPerPoint, shortSide: shortSide,
+            minimumRadius: minimumRadius, uniforms: uniforms
         )
         if let selection, let index = entryIndices[selection], snapshot.entries.indices.contains(index) {
             let entry = snapshot.entries[index]
@@ -398,7 +402,8 @@ public final class PlanetarySystemRenderer: NSObject {
     private static let selectionRingMargin: Float = 6
 
     private func drawBelts(
-        with encoder: MTLRenderCommandEncoder, snapshot: PlanetarySceneSnapshot, uniforms: inout FrameUniforms
+        with encoder: MTLRenderCommandEncoder, commandBuffer: MTLCommandBuffer, snapshot: PlanetarySceneSnapshot,
+        uniforms: inout FrameUniforms
     ) {
         guard !belts.isEmpty else { return }
         let instances = belts.map { belt in
@@ -410,9 +415,9 @@ public final class PlanetarySystemRenderer: NSObject {
             )
         }
         encoder.setRenderPipelineState(pipelines.belt)
-        instances.withUnsafeBytes { bytes in
-            if let base = bytes.baseAddress { encoder.setVertexBytes(base, length: bytes.count, index: 0) }
-        }
+        guard bindInstances(
+            instances, to: encoder, commandBuffer: commandBuffer, pool: beltBufferPool, label: "Belt instances"
+        ) else { return }
         encoder.setVertexBytes(&uniforms, length: MemoryLayout<FrameUniforms>.stride, index: 1)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: instances.count)
     }
@@ -458,9 +463,9 @@ public final class PlanetarySystemRenderer: NSObject {
 
     /// All the spheres as camera-facing impostors, far to near with premultiplied "over" blending.
     private func drawSpheres(
-        with encoder: MTLRenderCommandEncoder, snapshot: PlanetarySceneSnapshot, camera: OrbitCamera,
-        drawableSize: SIMD2<Float>, pixelsPerPoint: Float, shortSide: Float, minimumRadius: Float,
-        uniforms: FrameUniforms
+        with encoder: MTLRenderCommandEncoder, commandBuffer: MTLCommandBuffer, snapshot: PlanetarySceneSnapshot,
+        camera: OrbitCamera, drawableSize: SIMD2<Float>, pixelsPerPoint: Float, shortSide: Float,
+        minimumRadius: Float, uniforms: FrameUniforms
     ) {
         let eye = camera.position
         let order = snapshot.entries.indices
@@ -484,9 +489,9 @@ public final class PlanetarySystemRenderer: NSObject {
             tanHalfFieldOfView: tan(camera.fieldOfView / 2)
         )
         encoder.setRenderPipelineState(pipelines.sphere)
-        instances.withUnsafeBytes { bytes in
-            if let base = bytes.baseAddress { encoder.setVertexBytes(base, length: bytes.count, index: 0) }
-        }
+        guard bindInstances(
+            instances, to: encoder, commandBuffer: commandBuffer, pool: sphereBufferPool, label: "Sphere instances"
+        ) else { return }
         encoder.setVertexBytes(&sphereUniforms, length: MemoryLayout<SphereUniforms>.stride, index: 1)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: instances.count)
     }
@@ -545,35 +550,44 @@ public final class PlanetarySystemRenderer: NSObject {
         var drawableSize = SIMD2(Float(view.drawableSize.width), Float(view.drawableSize.height))
         encoder.setRenderPipelineState(pipelines.label)
         encoder.setVertexBytes(&drawableSize, length: MemoryLayout<SIMD2<Float>>.stride, index: 1)
-        if bindLabelInstances(to: encoder, commandBuffer: commandBuffer) {
+        if bindInstances(
+            labelInstances, to: encoder, commandBuffer: commandBuffer, pool: labelBufferPool, label: "Label instances"
+        ) {
             encoder.setFragmentTexture(labelAtlas.texture, index: 0)
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: labelInstances.count)
         }
     }
 
-    /// Binds `labelInstances` at vertex index 0. setVertexBytes is limited to 4 KB, so larger sets go
-    /// through a pooled buffer. Returns false, so the caller skips the draw, if a buffer can't be made.
-    private func bindLabelInstances(to encoder: MTLRenderCommandEncoder, commandBuffer: MTLCommandBuffer) -> Bool {
-        let length = MemoryLayout<LabelInstance>.stride * labelInstances.count
-        if length <= 4_096 {
-            labelInstances.withUnsafeBytes { bytes in
+    /// Binds `instances` at vertex index 0. `setVertexBytes` is limited to 4 KB, so larger sets (a
+    /// system with over 100 Bodies, or dozens of Belts) go through a buffer from `pool`, which goes
+    /// back to it when the GPU is done. Returns false, so the caller skips the draw, if a buffer
+    /// can't be made.
+    private func bindInstances<Instance>(
+        _ instances: [Instance], to encoder: MTLRenderCommandEncoder, commandBuffer: MTLCommandBuffer,
+        pool: BufferPool, label: String
+    ) -> Bool {
+        let length = MemoryLayout<Instance>.stride * instances.count
+        if length <= Self.maximumInlineBytes {
+            instances.withUnsafeBytes { bytes in
                 if let base = bytes.baseAddress { encoder.setVertexBytes(base, length: length, index: 0) }
             }
             return true
         }
-        guard let buffer = labelBufferPool.take(minimumLength: length)
+        guard let buffer = pool.take(minimumLength: length)
             ?? device.makeBuffer(length: length * 2, options: .storageModeShared)
         else { return false }
-        buffer.label = "Label instances"
-        labelInstances.withUnsafeBytes { bytes in
+        buffer.label = label
+        instances.withUnsafeBytes { bytes in
             if let base = bytes.baseAddress { buffer.contents().copyMemory(from: base, byteCount: length) }
         }
         encoder.setVertexBuffer(buffer, offset: 0, index: 0)
-        let pool = labelBufferPool
         let returned = BufferPool.Handoff(buffer: buffer)
         commandBuffer.addCompletedHandler { _ in pool.put(returned) }
         return true
     }
+
+    /// The most `setVertexBytes` accepts.
+    private static let maximumInlineBytes = 4_096
 }
 
 extension PlanetarySystemRenderer: MTKViewDelegate {

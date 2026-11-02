@@ -1,0 +1,31 @@
+{
+  "name": "Solar System",
+  "centralStar": { "catalogName": "Sun" },
+  "bodies": [
+    {"name": "Mercury", "kind": "planet", "parent": "Sun", "distance": 0.387, "radius": 2439.7, "mass": 0.0553, "eccentricity": 0.2056, "inclination": 7.0, "color": "#A8A29B"},
+    {"name": "Venus", "kind": "planet", "parent": "Sun", "distance": 0.723, "radius": 6051.8, "mass": 0.815, "eccentricity": 0.0068, "inclination": 3.39, "color": "#E6C98F"},
+    {"name": "Earth", "kind": "planet", "parent": "Sun", "distance": 1.0, "radius": 6371.0, "mass": 1.0, "eccentricity": 0.0167, "inclination": 0.0, "color": "#4F7FD0"},
+    {"name": "Mars", "kind": "planet", "parent": "Sun", "distance": 1.524, "radius": 3389.5, "mass": 0.107, "eccentricity": 0.0934, "inclination": 1.85, "color": "#C1572F"},
+    {"name": "Jupiter", "kind": "planet", "parent": "Sun", "distance": 5.203, "radius": 69911, "mass": 317.8, "eccentricity": 0.0484, "inclination": 1.3, "color": "#D9B88F"},
+    {"name": "Saturn", "kind": "planet", "parent": "Sun", "distance": 9.537, "radius": 58232, "mass": 95.2, "eccentricity": 0.0539, "inclination": 2.49, "color": "#E3D2A1"},
+    {"name": "Uranus", "kind": "planet", "parent": "Sun", "distance": 19.19, "radius": 25362, "mass": 14.5, "eccentricity": 0.0473, "inclination": 0.77, "color": "#9BD7DC"},
+    {"name": "Neptune", "kind": "planet", "parent": "Sun", "distance": 30.07, "radius": 24622, "mass": 17.1, "eccentricity": 0.0086, "inclination": 1.77, "color": "#4B6FDD"},
+    {"name": "Ceres", "kind": "dwarf planet", "parent": "Sun", "distance": 2.77, "radius": 469.7, "mass": 0.000157, "eccentricity": 0.0785, "inclination": 10.6},
+    {"name": "Pluto", "kind": "dwarf planet", "parent": "Sun", "distance": 39.48, "radius": 1188.3, "mass": 0.00218, "eccentricity": 0.2488, "inclination": 17.16},
+    {"name": "Eris", "kind": "dwarf planet", "parent": "Sun", "distance": 67.86, "radius": 1163, "mass": 0.0028, "eccentricity": 0.436, "inclination": 44.04},
+    {"name": "Haumea", "kind": "dwarf planet", "parent": "Sun", "distance": 43.13, "radius": 780, "mass": 0.00067, "eccentricity": 0.195, "inclination": 28.2},
+    {"name": "Makemake", "kind": "dwarf planet", "parent": "Sun", "distance": 45.79, "radius": 715, "mass": 0.00052, "eccentricity": 0.159, "inclination": 29.0},
+    {"name": "Moon", "kind": "moon", "parent": "Earth", "distance": 0.0025696, "radius": 1737.4, "mass": 0.0123, "color": "#BDBDBD"},
+    {"name": "Io", "kind": "moon", "parent": "Jupiter", "distance": 0.0028189, "radius": 1821.6, "mass": 0.015},
+    {"name": "Europa", "kind": "moon", "parent": "Jupiter", "distance": 0.0044856, "radius": 1560.8, "mass": 0.008},
+    {"name": "Ganymede", "kind": "moon", "parent": "Jupiter", "distance": 0.0071552, "radius": 2634.1, "mass": 0.0248},
+    {"name": "Callisto", "kind": "moon", "parent": "Jupiter", "distance": 0.0125852, "radius": 2410.3, "mass": 0.018},
+    {"name": "Titan", "kind": "moon", "parent": "Saturn", "distance": 0.0081677, "radius": 2574.7, "mass": 0.0225},
+    {"name": "Triton", "kind": "moon", "parent": "Neptune", "distance": 0.0023714, "radius": 1353.4, "mass": 0.00359},
+    {"name": "Charon", "kind": "moon", "parent": "Pluto", "distance": 0.00013096, "radius": 606, "mass": 0.000254}
+  ],
+  "belts": [
+    {"name": "Asteroid belt", "parent": "Sun", "innerEdge": 2.2, "outerEdge": 3.2},
+    {"name": "Kuiper belt", "parent": "Sun", "innerEdge": 30, "outerEdge": 50}
+  ]
+}

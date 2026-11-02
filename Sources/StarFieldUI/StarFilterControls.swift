@@ -11,6 +11,14 @@ struct StarFilterControls: View {
     private static let magnitudeRange = -3.0...20.0
 
     var body: some View {
+        // Scrolls only where the popover is too short, as on a phone in landscape.
+        ViewThatFits(in: .vertical) {
+            form
+            ScrollView { form }
+        }
+    }
+
+    private var form: some View {
         VStack(alignment: .leading, spacing: 14) {
             section("Distance from the Sun") {
                 Text(distanceText).monospacedDigit().foregroundStyle(.secondary)
@@ -19,12 +27,17 @@ struct StarFilterControls: View {
             }
 
             section("Spectral class") {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 5), spacing: 6) {
-                    ForEach(SpectralClass.allCases) { spectralClass in
-                        Toggle(spectralClass.title, isOn: classBinding(spectralClass))
-                            .toggleStyle(.button)
-                            .lineLimit(1)
-                            .help(Self.help(for: spectralClass))
+                Grid(horizontalSpacing: 6, verticalSpacing: 6) {
+                    ForEach([Array(SpectralClass.allCases.prefix(5)), Array(SpectralClass.allCases.dropFirst(5))], id: \.self) { row in
+                        GridRow {
+                            ForEach(row) { spectralClass in
+                                Toggle(spectralClass.shortTitle, isOn: classBinding(spectralClass))
+                                    .toggleStyle(.button)
+                                    .lineLimit(1)
+                                    .fixedSize()
+                                    .help(Self.help(for: spectralClass))
+                            }
+                        }
                     }
                 }
             }
@@ -49,7 +62,7 @@ struct StarFilterControls: View {
 
             Divider()
             HStack {
-                Text("\(catalog.stars(matching: filter).count.formatted()) of \(catalog.stars.count.formatted()) stars")
+                Text("\(catalog.stars(matching: filter).count.formatted()) of \(catalog.stars.count.formatted()) stars match")
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
                 Spacer()
@@ -197,6 +210,10 @@ struct StarSearchPanel: View {
         }
         .frame(width: 280)
         .background(.regularMaterial, in: .rect(cornerRadius: 12))
-        .onAppear { isFocused = true }
+        // Focus once the panel is on screen; focusing during the same update can be dropped.
+        .task {
+            try? await Task.sleep(for: .milliseconds(50))
+            isFocused = true
+        }
     }
 }

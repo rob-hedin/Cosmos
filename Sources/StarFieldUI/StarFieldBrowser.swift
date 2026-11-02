@@ -16,13 +16,6 @@ public struct StarFieldBrowser: View {
     @State private var searchFrame: CGRect?
     private let focus: StarFieldFocus?
     private let route: [String]
-    #if os(iOS)
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    /// On a phone the toggles show only their icons, so the controls fit across the screen.
-    private var isCompact: Bool { horizontalSizeClass == .compact }
-    #else
-    private let isCompact = false
-    #endif
 
     /// Opens on `focus` if given, otherwise frames `route`, showing the stars `filter` lets
     /// through; see ``StarFieldView``.
@@ -45,7 +38,11 @@ public struct StarFieldBrowser: View {
         .starFieldLabelObstacles([controlsFrame, searchFrame].compactMap { $0 })
         .overlay(alignment: .topTrailing) {
             VStack(alignment: .trailing, spacing: 8) {
-                controls
+                // Where the full controls don't fit, as on a phone, the toggles show only their icons.
+                ViewThatFits(in: .horizontal) {
+                    controls(compact: false)
+                    controls(compact: true)
+                }
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { controlsFrame = $0 }
                 if isSearching, let catalog {
                     StarSearchPanel(catalog: catalog, onPick: pick) { isSearching = false }
@@ -57,7 +54,7 @@ public struct StarFieldBrowser: View {
         }
     }
 
-    private var controls: some View {
+    private func controls(compact: Bool) -> some View {
         HStack(spacing: 10) {
             Toggle("Search", systemImage: "magnifyingglass", isOn: $isSearching)
                 .toggleStyle(.button)
@@ -81,7 +78,7 @@ public struct StarFieldBrowser: View {
                         .presentationCompactAdaptation(.popover)
                 }
             }
-            if isCompact {
+            if compact {
                 toggles.labelStyle(.iconOnly)
             } else {
                 toggles

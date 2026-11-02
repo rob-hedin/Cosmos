@@ -155,3 +155,53 @@ private struct SplitMix: RandomNumberGenerator {
         return z ^ (z >> 31)
     }
 }
+
+@Suite struct SearchRankingTests {
+    let catalog: StarCatalog
+
+    init() throws {
+        catalog = try StarCatalog.bundled()
+    }
+
+    @Test func aliasPrefixesDontOutrankBrighterNamePrefixes() throws {
+        let names = catalog.search("al", limit: 5).map(\.name)
+        #expect(names.contains("Altair"))
+        #expect(!names.contains("Proxima Centauri"))
+    }
+
+    @Test func partialCatalogNumbersSuggestNamedStars() throws {
+        let rigil = try #require(catalog.star(named: "Rigil Kentaurus"))
+        let hip = try #require(rigil.hipparcosID)
+        let partial = String(String(hip).dropLast())
+        #expect(catalog.search("HIP \(partial)", limit: 20).contains { $0.starID == rigil.id })
+    }
+
+    @Test func multiwordQueriesMatchAtWordStarts() {
+        // A word-start match beats a match inside a word.
+        #expect(catalog.search("tau cet").first?.name == "52 Tau Cet")
+    }
+}
+
+@Suite struct CompanionNotationTests {
+    @Test(arguments: ["G8V + K4V", "M3.5Ve+M4Ve", "K0V+dM3", "A1V+DA"])
+    func compositeSpectraListCompanions(type: String) {
+        #expect(StarCatalog.listsCompanion(type))
+    }
+
+    @Test(arguments: ["DZ9+", "m+", "F8+...", "G2V", "M4+..."])
+    func qualifiersDoNot(type: String) {
+        #expect(!StarCatalog.listsCompanion(type))
+    }
+
+    @Test func starsWithUnusableCoordinatesDontCrash() {
+        let stars = [
+            Star(id: 0, name: "Bad", apparentMagnitude: 5, absoluteMagnitude: 5,
+                 rightAscensionHours: .nan, declinationDegrees: 0, distanceLightYears: 50),
+            Star(id: 1, name: "Worse", apparentMagnitude: 5, absoluteMagnitude: 5,
+                 rightAscensionHours: 1, declinationDegrees: 0, distanceLightYears: .infinity),
+            Star(id: 2, name: "Fine", apparentMagnitude: 5, absoluteMagnitude: 5,
+                 rightAscensionHours: 1, declinationDegrees: 0, distanceLightYears: 50),
+        ]
+        #expect(StarCatalog(stars: stars).multipleSystemIDs.isEmpty)
+    }
+}

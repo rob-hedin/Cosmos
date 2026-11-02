@@ -9,6 +9,11 @@ public enum SpectralClass: String, Sendable, Hashable, CaseIterable, Identifiabl
 
     public var id: Self { self }
 
+    /// "O" through "M", "WD" or "Other", short enough for a row of buttons.
+    public var shortTitle: String {
+        self == .whiteDwarf ? "WD" : title
+    }
+
     /// "O" through "M", "White dwarf" or "Other".
     public var title: String {
         switch self {
@@ -106,11 +111,25 @@ extension StarCatalog {
 
     static let companionSeparation = 0.3
 
+    /// A composite spectrum such as "G8V + K4V" or "M3.5Ve+M4Ve". A "+" with no second type
+    /// after it, as in "DZ9+" or "m+", is a qualifier, not a companion.
+    static func listsCompanion(_ spectralType: String?) -> Bool {
+        guard let spectralType else { return false }
+        return spectralType.contains(companionPattern)
+    }
+
+    nonisolated(unsafe) private static let companionPattern = try! Regex(#"\+\s*(sd|d)?[OBAFGKMDLTY]"#)
+
     static func findMultipleSystems(in stars: [Star]) -> Set<Star.ID> {
-        var ids = Set(stars.filter { $0.spectralType?.contains("+") == true }.map(\.id))
+        var ids = Set(stars.filter { listsCompanion($0.spectralType) }.map(\.id))
         let directions = stars.map { star -> SIMD3<Double> in
             let distance = max(star.distanceLightYears, 1e-9)
             return SIMD3<Double>(star.position) / distance
+        }
+        // Stars with unusable coordinates can't be placed, so they pair with nothing.
+        let placeable = stars.indices.map { i in
+            stars[i].distanceLightYears.isFinite && directions[i].x.isFinite
+                && directions[i].y.isFinite && directions[i].z.isFinite
         }
         func areCompanions(_ i: Int, _ j: Int) -> Bool {
             let (a, b) = (stars[i].distanceLightYears, stars[j].distanceLightYears)
@@ -126,7 +145,7 @@ extension StarCatalog {
 
         // Nearby stars can be companions many degrees apart, so compare them all.
         let nearLimit = 25.0
-        let near = stars.indices.filter { stars[$0].distanceLightYears < nearLimit }
+        let near = stars.indices.filter { placeable[$0] && stars[$0].distanceLightYears < nearLimit }
         for (n, i) in near.enumerated() {
             for j in near[(n + 1)...] { pair(i, j) }
         }
@@ -138,10 +157,10 @@ extension StarCatalog {
                   Int((d.z * cellsPerUnit).rounded(.down)))
         }
         var buckets: [SIMD3<Int>: [Int]] = [:]
-        for i in stars.indices where stars[i].distanceLightYears >= nearLimit - 5 {
+        for i in stars.indices where placeable[i] && stars[i].distanceLightYears >= nearLimit - 5 {
             buckets[cell(directions[i]), default: []].append(i)
         }
-        for i in stars.indices where stars[i].distanceLightYears >= nearLimit {
+        for i in stars.indices where placeable[i] && stars[i].distanceLightYears >= nearLimit {
             let home = cell(directions[i])
             for dx in -1...1 {
                 for dy in -1...1 {

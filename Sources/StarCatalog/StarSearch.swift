@@ -10,23 +10,36 @@ extension StarCatalog {
         guard !key.isEmpty, limit > 0 else { return [] }
         let squeezedKey = key.filter { $0 != " " }
 
+        // Tiers: 0 exact, 1 prefix, 2 word prefix, 3 anywhere. Each star keeps its best tier.
         var results: [(rank: Int, magnitude: Double, location: StarLocation)] = []
-        var seen = Set<Star.ID>()
+        var slot: [Star.ID: Int] = [:]
         func add(_ star: Star, rank: Int) {
-            guard seen.insert(star.id).inserted else { return }
-            // Catalog numbers rank after real names of the same kind.
+            // Catalog numbers rank after real names in the same tier.
             let rank = rank * 2 + (star.isCatalogDesignation ? 1 : 0)
+            if let index = slot[star.id] {
+                results[index].rank = min(results[index].rank, rank)
+                return
+            }
+            slot[star.id] = results.count
             results.append((rank, star.apparentMagnitude, StarLocation(name: star.name, position: star.position, starID: star.id)))
         }
 
         if "sun".hasPrefix(key) || "sol".hasPrefix(key) {
-            results.append((key == "sun" || key == "sol" ? -2 : 0, -26.7, .sun))
+            results.append((key == "sun" || key == "sol" ? 0 : 2, -26.7, .sun))
         }
-        for (alias, name) in Self.aliases where alias.hasPrefix(key.replacingOccurrences(of: "'", with: "")) {
-            if let star = star(named: name) { add(star, rank: alias == key ? -1 : 0) }
+        let aliasKey = key.replacingOccurrences(of: "'", with: "")
+        for (alias, name) in Self.aliases where alias.hasPrefix(aliasKey) {
+            if let star = star(named: name) { add(star, rank: alias == aliasKey ? 0 : 1) }
         }
-        if let star = location(named: query).flatMap({ $0.starID }).flatMap(star(withID:)) {
-            add(star, rank: -1)
+        // "hip 7168" suggests every star whose HIP number starts with 7168, named or not.
+        let parts = key.split(separator: " ")
+        if parts.count == 2, ["hip", "hd"].contains(parts[0]), parts[1].allSatisfy(\.isNumber) {
+            let digits = String(parts[1])
+            for star in stars {
+                guard let number = parts[0] == "hip" ? star.hipparcosID : star.henryDraperID else { continue }
+                let text = String(number)
+                if text.hasPrefix(digits) { add(star, rank: text == digits ? 0 : 1) }
+            }
         }
         for (star, name) in zip(stars, searchNames) {
             let rank: Int
@@ -34,7 +47,7 @@ extension StarCatalog {
                 rank = 0
             } else if name.hasPrefix(key) {
                 rank = 1
-            } else if name.split(separator: " ").contains(where: { $0.hasPrefix(key) }) {
+            } else if name.contains(" " + key) {
                 rank = 2
             } else if name.contains(key) {
                 rank = 3

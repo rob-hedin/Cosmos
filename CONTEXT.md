@@ -53,6 +53,8 @@ The view where distances and sizes keep their real proportions.
 
 - A **Planetary System** has one **Central Star**, and any number of **Bodies** and **Belts**.
 - Each **Body** has one **Parent**; Bodies nest (Sun → Earth → Moon).
+- A moon's **Parent** is a planet, dwarf planet or asteroid. Planets, dwarf planets, asteroids and comets have the **Central Star** as their **Parent**.
+- A **Belt** has a **Parent** and an inner and outer edge.
 - The **Solar System**'s **Central Star** is the catalog's Sun.
 
 ## Flagged ambiguities

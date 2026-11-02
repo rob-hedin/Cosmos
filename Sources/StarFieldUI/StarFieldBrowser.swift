@@ -74,7 +74,7 @@ public struct StarFieldBrowser: View {
         if isEditingRoute {
             if (builtRoute ?? []).isEmpty { editing.hint = Self.addStopsHint }
             editing.onStarClick = addClickedStar
-            editing.onUndo = undoStop
+            if builtRoute?.isEmpty == false { editing.onUndo = undoStop }
         }
         return editing
     }
@@ -86,6 +86,11 @@ public struct StarFieldBrowser: View {
 
     private func undoStop() {
         _ = builtRoute?.popLast()
+    }
+
+    private func resetBuiltRoute() {
+        builtRoute = nil
+        repeatedStop = nil
     }
 
     private func clearBuiltRoute() {
@@ -114,8 +119,16 @@ public struct StarFieldBrowser: View {
             Button("Cancel", role: .cancel) {}
         }
         .overlay(alignment: .topTrailing) {
-            if showsToolbar { toolbar }
+            if showsToolbar {
+                toolbar.onDisappear {
+                    controlsFrame = nil
+                    searchFrame = nil
+                }
+            }
         }
+        // A new route or catalog from the app replaces whatever the user built.
+        .onChange(of: route) { resetBuiltRoute() }
+        .onChange(of: customCatalog) { resetBuiltRoute() }
     }
 
     private var toolbar: some View {

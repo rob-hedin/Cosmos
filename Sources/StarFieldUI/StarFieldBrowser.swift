@@ -225,6 +225,9 @@ public struct StarFieldBrowser: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .labelStyle(.iconOnly)
+        .padding(3)
+        // Highlighted while on, like the toggle buttons beside it.
+        .background(constellations == .off ? Color.clear : Color.accentColor.opacity(0.3), in: .rect(cornerRadius: 6))
         .help("Constellation figures")
     }
 

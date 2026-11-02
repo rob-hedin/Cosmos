@@ -64,19 +64,21 @@ public struct Constellation: Sendable, Hashable, Identifiable {
 }
 
 extension StarCatalog {
-    /// The brightest star within `toleranceDegrees` of `sky`, such as the catalog star at one
-    /// point of a constellation figure. Nil when the point's star lies beyond the catalog.
-    public func star(near sky: SkyPosition, toleranceDegrees: Double = 0.3, magnitudeLimit: Double = 7) -> Star? {
+    /// The star nearest `sky`, within `toleranceDegrees`, such as the catalog star at one point
+    /// of a constellation figure. Nil when the point's star lies beyond the catalog. The figures'
+    /// points match their catalog stars to within 0.005°, while the nearest unrelated star is
+    /// 0.09° away, so the default tolerance doesn't substitute a neighbor for a missing star.
+    public func star(near sky: SkyPosition, toleranceDegrees: Double = 0.02, magnitudeLimit: Double = 7) -> Star? {
         let target = sky.direction
+        var best: (star: Star, cosine: Double)?
         let threshold = cos(toleranceDegrees * .pi / 180)
-        var best: Star?
         for star in stars where star.apparentMagnitude < magnitudeLimit {
             let distance = star.distanceLightYears
             guard distance > 0, distance.isFinite else { continue }
-            let direction = SIMD3<Double>(star.position) / distance
-            guard (direction * target).sum() >= threshold else { continue }
-            if best.map({ star.apparentMagnitude < $0.apparentMagnitude }) ?? true { best = star }
+            let cosine = (SIMD3<Double>(star.position) / distance * target).sum()
+            guard cosine >= threshold, cosine > best?.cosine ?? -2 else { continue }
+            best = (star, cosine)
         }
-        return best
+        return best?.star
     }
 }

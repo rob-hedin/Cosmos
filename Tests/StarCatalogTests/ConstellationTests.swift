@@ -44,6 +44,12 @@ import Testing
         #expect(catalog.star(near: betelgeuse) == nil)
     }
 
+    /// Points whose stars lie beyond the catalog mustn't pick up an unrelated neighbor.
+    @Test(arguments: [(10.27817, 23.4173), (10.37215, 41.4995)])
+    func missingFigureStarsAreNotSubstituted(ra: Double, dec: Double) {
+        #expect(catalog.star(near: SkyPosition(rightAscensionHours: ra, declinationDegrees: dec)) == nil)
+    }
+
     @Test func directionsAreUnitVectors() {
         let polaris = SkyPosition(rightAscensionHours: 2.53, declinationDegrees: 89.26)
         let length = (polaris.direction * polaris.direction).sum().squareRoot()

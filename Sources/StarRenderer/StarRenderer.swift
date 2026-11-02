@@ -790,13 +790,19 @@ extension StarRenderer {
             }
         }
 
-        // Constellation names go after the brightest star names, which matter more.
+        // Constellation names rank after the brighter star names, and take at most a third of
+        // the label slots, those nearest the middle of the view, so star names still show.
         if constellationStyle != .off, let constellationAtlas {
             let color = SIMD4(simd_min(constellationColor * 3, SIMD3(repeating: 1)), 0.9)
-            for (index, point) in constellationLabelPoints.enumerated() {
-                guard let point, let entry = constellationAtlas.entries[index], let anchor = project(point) else { continue }
-                add(entry, from: constellationAtlas.texture, color: color, at: anchor,
-                    radius: 0, priority: 3, triesOtherSides: true)
+            let middle = viewport / 2
+            let names = constellationLabelPoints.enumerated()
+                .compactMap { index, point in point.flatMap(project).map { (index: index, anchor: $0) } }
+                .sorted { simd_distance_squared($0.anchor, middle) < simd_distance_squared($1.anchor, middle) }
+                .prefix(max(maxLabels / 3, 1))
+            for name in names {
+                guard let entry = constellationAtlas.entries[name.index] else { continue }
+                add(entry, from: constellationAtlas.texture, color: color, at: name.anchor,
+                    radius: 0, priority: 4, triesOtherSides: true)
             }
         }
 

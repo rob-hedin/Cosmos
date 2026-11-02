@@ -12,6 +12,7 @@ public struct StarFieldScene: Scene {
     private let focus: StarFieldFocus?
     private let route: [String]
     private let filter: StarFilter
+    private let constellations: ConstellationStyle
     private let showsToolbar: Bool
     private let showsRouteBuilder: Bool
 
@@ -23,10 +24,12 @@ public struct StarFieldScene: Scene {
         focus: StarFieldFocus? = nil,
         route: [String] = [],
         filter: StarFilter = .all,
+        constellations: ConstellationStyle = .off,
         showsToolbar: Bool = true,
         showsRouteBuilder: Bool = true
     ) {
         self.title = title
+        self.constellations = constellations
         self.focus = focus
         self.route = route
         self.filter = filter
@@ -36,7 +39,7 @@ public struct StarFieldScene: Scene {
 
     private var browser: StarFieldBrowser {
         StarFieldBrowser(
-            focus: focus, route: route, filter: filter,
+            focus: focus, route: route, filter: filter, constellations: constellations,
             showsToolbar: showsToolbar, showsRouteBuilder: showsRouteBuilder
         )
     }
@@ -74,11 +77,13 @@ public enum StarFieldWindow {
         focus: StarFieldFocus? = nil,
         route: [String] = [],
         filter: StarFilter = .all,
+        constellations: ConstellationStyle = .off,
         showsToolbar: Bool = true,
         showsRouteBuilder: Bool = true
     ) -> NSWindow {
         let content = StarFieldBrowser(
             catalog: catalog, sizeMode: sizeMode, focus: focus, route: route, filter: filter,
+            constellations: constellations,
             showsToolbar: showsToolbar, showsRouteBuilder: showsRouteBuilder
         )
         let window = NSWindow(

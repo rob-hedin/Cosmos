@@ -9,6 +9,7 @@ public struct StarFieldBrowser: View {
     @State private var sizeMode: StarSizeMode
     @State private var showsLabels = true
     @State private var showsRings = true
+    @State private var constellations: ConstellationStyle
     @State private var selection: Star.ID?
     @State private var filter: StarFilter
     @State private var isSearching = false
@@ -36,6 +37,7 @@ public struct StarFieldBrowser: View {
         focus: StarFieldFocus? = nil,
         route: [String] = [],
         filter: StarFilter = .all,
+        constellations: ConstellationStyle = .off,
         showsToolbar: Bool = true,
         showsRouteBuilder: Bool = true
     ) {
@@ -44,6 +46,7 @@ public struct StarFieldBrowser: View {
         self.focus = focus
         self.route = route
         _filter = State(initialValue: filter)
+        _constellations = State(initialValue: constellations)
         self.showsToolbar = showsToolbar
         self.showsRouteBuilder = showsRouteBuilder
     }
@@ -56,12 +59,13 @@ public struct StarFieldBrowser: View {
         if let customCatalog {
             StarFieldView(
                 catalog: customCatalog, sizeMode: sizeMode, selection: $selection, showsLabels: showsLabels,
-                showsReferenceRings: showsRings, focus: focus, route: route, filter: filter
+                showsReferenceRings: showsRings, constellations: constellations, focus: focus, route: route,
+                filter: filter
             )
         } else {
             StarFieldView(
                 sizeMode: sizeMode, selection: $selection, showsLabels: showsLabels, showsReferenceRings: showsRings,
-                focus: focus, route: route, filter: filter
+                constellations: constellations, focus: focus, route: route, filter: filter
             )
         }
     }
@@ -183,6 +187,7 @@ public struct StarFieldBrowser: View {
             } else {
                 toggles
             }
+            constellationMenu
             Picker("Size", selection: $sizeMode) {
                 Text("Luminosity").tag(StarSizeMode.luminosity)
                 Text("Radius").tag(StarSizeMode.estimatedRadius)
@@ -204,6 +209,23 @@ public struct StarFieldBrowser: View {
                 .help("Rings at 50, 100 and 200 light years from the Sun")
         }
         .toggleStyle(.button)
+    }
+
+    private var constellationMenu: some View {
+        Menu {
+            Picker("Constellations", selection: $constellations) {
+                Text("Off").tag(ConstellationStyle.off)
+                Text("Between Catalog Stars (3D)").tag(ConstellationStyle.catalogStars)
+                Text("As Seen from Earth").tag(ConstellationStyle.skySphere)
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Label("Constellations", systemImage: constellations == .off ? "star" : "star.fill")
+        }
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .labelStyle(.iconOnly)
+        .help("Constellation figures")
     }
 
     /// Selects the star and glides to it. The Sun can't be selected, so picking it just flies home.

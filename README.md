@@ -7,8 +7,8 @@ A Swift and Metal framework for macOS 27 and iOS/iPadOS 27 that shows the 11,975
 | Module | Status | What it does |
 | --- | --- | --- |
 | `StarCatalog` | Done | Loads the bundled CSV; computes 3D positions (light years, Sun at origin, equatorial frame), luminosity, temperature, estimated radius, and blackbody color; size normalization for both size modes |
-| `StarRenderer` | First light | Metal renderer: one instanced draw of all stars with additive glow, Sun marker, `OrbitCamera` with rotate, zoom, pan, roll, reset and fling; picking, selection ring, fly-to, decluttered star names |
-| `StarFieldUI` | First light | SwiftUI `StarFieldView`, `StarFieldScene` (macOS and iOS), `StarFieldWindow.open()` (macOS), mouse, trackpad and touch input, selection binding, `StarInfoCard`, `StarFieldBrowser` with search, filters, a route builder, and name and size controls. |
+| `StarRenderer` | First light | Metal renderer: one instanced draw of all stars with additive glow, Sun marker, `OrbitCamera` with rotate, zoom, pan, roll, reset and fling; picking, selection ring, fly-to, decluttered star names. `PlanetarySystemRenderer` draws one planetary system: lit spheres, belts, orbit lines, names. |
+| `StarFieldUI` | First light | SwiftUI `StarFieldView`, `StarFieldScene` (macOS and iOS), `StarFieldWindow.open()` (macOS), mouse, trackpad and touch input, selection binding, `StarInfoCard`, `StarFieldBrowser` with search, filters, a route builder, and name and size controls. `PlanetarySystemView` and `PlanetarySystemInfoCard` for planetary systems. |
 
 ## Usage
 
@@ -117,6 +117,33 @@ if let earth = solar.body(named: "Earth") {
     let days = solar.orbitalPeriod(of: earth) // about 365.25
 }
 ```
+
+### Viewing a planetary system
+
+`PlanetarySystemView` shows one planetary system in 3D on macOS, iPhone and iPad, with the central star at the middle, its bodies as shaded spheres in the body's color (or a default for its kind) and its belts as faint rings. It reuses the star view's camera, gestures and name placement.
+
+```swift
+PlanetarySystemView()                          // the built-in Solar System
+PlanetarySystemView(system: mySystem, scale: .trueScale, speed: .month)
+PlanetarySystemView(selection: $selectedItem)  // read or set the selection (a PlanetarySystemItem)
+```
+
+Pass `showsControls: false`, `showsInfoCard: false` or `showsLabels: false` to leave those out. `scale`, `speed`, `isPaused` and `showsLabels` are starting values; the controls change them, and new values from your app replace what the controls set. `PlanetarySystemInfoCard(item:system:)` is the card on its own.
+
+The controls at the top right switch the scale, pause the orbits, set their speed (1 day to 1 year per second; it opens at 1 week per second) and turn names on and off.
+
+- **Compressed scale** (the default) squeezes distances so everything fits, and draws bodies larger than life. Each level is compressed on its own, so moons stay outside their enlarged planet, and a body keeps its true direction from its parent.
+- **True scale** keeps real distances (a scene unit is one AU) and real sizes. Tiny bodies are still drawn at least a few points wide so they can be found.
+
+| Action | Mac | iPhone and iPad |
+| --- | --- | --- |
+| Rotate, zoom, pan, roll | As in the star view | As in the star view |
+| Select an item and show its card | Click it | Tap it |
+| Deselect | Click empty space | Tap empty space |
+| Fly to a body and follow it | Double-click it | Double-tap it |
+| Back to the whole system | Double-click empty space | Double-tap empty space |
+
+The card shows the body's kind, parent, distance, period, radius, mass when known, and the belt it lies in; for the central star, its spectral type, mass, radius and temperature. Names for crowded moons appear when you zoom in or select the moon.
 
 ## Data
 

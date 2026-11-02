@@ -67,8 +67,13 @@ public struct OrbitCamera: Sendable, Equatable {
 
     // MARK: Manipulation
 
-    /// Closest and farthest the camera may get to its target, in light years.
+    /// Closest and farthest the camera may get to its target, in light years, unless a camera sets
+    /// its own `distanceLimits`.
     public static let distanceRange: ClosedRange<Float> = 0.5...2_000
+
+    /// Closest and farthest this camera may get to its target, in the units of the scene. Defaults to
+    /// `OrbitCamera.distanceRange`. `zoom`, `center` and `fit` clamp to it; `reset()` leaves it alone.
+    public var distanceLimits: ClosedRange<Float> = OrbitCamera.distanceRange
 
     /// Camera right direction in world space.
     public var right: SIMD3<Float> {
@@ -91,7 +96,7 @@ public struct OrbitCamera: Sendable, Equatable {
     /// Multiplies the distance to the target: below 1 moves closer, above 1 moves away.
     public mutating func zoom(by factor: Float) {
         guard factor.isFinite, factor > 0 else { return }
-        distance = min(max(distance * factor, Self.distanceRange.lowerBound), Self.distanceRange.upperBound)
+        distance = clamped(distance * factor)
     }
 
     /// Light years visible across the viewport's shorter side, at the target's distance.
@@ -104,13 +109,13 @@ public struct OrbitCamera: Sendable, Equatable {
     public mutating func center(on point: SIMD3<Float>, span: Float) {
         target = point
         guard span.isFinite, span > 0 else { return }
-        distance = Self.clamped(span / 2 / tan(fieldOfView / 2))
+        distance = clamped(span / 2 / tan(fieldOfView / 2))
     }
 
     /// Centers the view on `point` and comes just close enough that every one of `points` is on
     /// screen from the current direction, with `margin` to spare (1 is a tight fit). Fits within
     /// the viewport's shorter side, so it holds for any aspect ratio. Never closer than a span of
-    /// `minimumSpan` light years, nor farther than `distanceRange` allows.
+    /// `minimumSpan` light years, nor outside `distanceLimits`.
     public mutating func fit(
         center point: SIMD3<Float>, containing points: [SIMD3<Float>], margin: Float = 1.15, minimumSpan: Float = 10
     ) {
@@ -124,14 +129,14 @@ public struct OrbitCamera: Sendable, Equatable {
             let lateral = max(abs(simd_dot(offset, right)), abs(simd_dot(offset, up)))
             let depth = simd_dot(offset, forward)
             // On screen when lateral / (distance + depth) <= halfTan / margin, and in front of the eye.
-            needed = max(needed, lateral * margin / halfTan - depth, Self.distanceRange.lowerBound - depth)
+            needed = max(needed, lateral * margin / halfTan - depth, distanceLimits.lowerBound - depth)
         }
         target = point
-        distance = Self.clamped(needed)
+        distance = clamped(needed)
     }
 
-    private static func clamped(_ distance: Float) -> Float {
-        min(max(distance, distanceRange.lowerBound), distanceRange.upperBound)
+    private func clamped(_ distance: Float) -> Float {
+        min(max(distance, distanceLimits.lowerBound), distanceLimits.upperBound)
     }
 
     /// Slides the target so the scene follows a drag of `points` (screen convention, +y downward)
@@ -142,7 +147,7 @@ public struct OrbitCamera: Sendable, Equatable {
         target += (-right * points.x + up * points.y) * worldPerPoint
     }
 
-    /// Back to the default view of the whole catalog.
+    /// Back to the default view of the whole catalog. Leaves `distanceLimits` as they are.
     public mutating func reset() {
         let home = OrbitCamera()
         target = home.target

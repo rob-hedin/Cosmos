@@ -3,6 +3,39 @@ import StarCatalog
 import StarRenderer
 import simd
 
+/// What the gesture view moves: a renderer's camera. The star view and the Planetary System view
+/// each have their own camera, and the gestures are the same for both.
+@MainActor
+protocol CameraController: AnyObject {
+    /// Orbits around the target; angles in radians, screen convention (+x a drag to the right,
+    /// +y a drag downward).
+    func rotate(by angles: SIMD2<Float>)
+    /// Slides the view with a drag of `points` (+y downward) in a viewport whose shorter side is
+    /// `viewportShortSide` points.
+    func pan(byPoints points: SIMD2<Float>, viewportShortSide: Float)
+    /// Multiplies the distance to the target: below 1 moves closer.
+    func zoom(by factor: Float)
+    /// Spins the view about its line of sight, in radians (counterclockwise when positive).
+    func roll(by angle: Float)
+    /// Keeps rotating at `angularVelocity` (radians per second, screen convention) after a drag.
+    func fling(angularVelocity: SIMD2<Float>)
+    /// Stops a fling and any flight.
+    func stopMotion()
+    /// Stops a flight, leaving any fling running.
+    func cancelFlight()
+}
+
+extension StarRenderer: CameraController {
+    func rotate(by angles: SIMD2<Float>) { camera.rotate(by: angles) }
+    func pan(byPoints points: SIMD2<Float>, viewportShortSide: Float) {
+        camera.pan(byPoints: points, viewportShortSide: viewportShortSide)
+    }
+    func zoom(by factor: Float) { camera.zoom(by: factor) }
+    func roll(by angle: Float) { camera.roll(by: angle) }
+}
+
+extension PlanetarySystemRenderer: CameraController {}
+
 #if os(macOS)
 import AppKit
 
@@ -14,18 +47,24 @@ import AppKit
 /// | Zoom | Scroll wheel, trackpad scroll or pinch |
 /// | Pan | Shift-drag, right-drag or middle-drag |
 /// | Roll | Trackpad rotate |
-/// | Select | Click a star (click empty space to deselect) |
-/// | Fly to a star | Double-click it |
-/// | Reset | Double-click empty space |
-final class InteractiveStarView: MTKView {
+/// | Click | `onClick`: the star view selects a star, the Planetary System view an item |
+/// | Double-click | `onDoubleClick`: flies to what is under the pointer, or resets on empty space |
+final class InteractiveMetalView: MTKView {
     /// Rotation per point dragged, in radians.
     var radiansPerPoint: Float = 0.006
 
-    /// Called when a click selects a star, or with nil when a click lands on empty space.
-    var onSelect: (@MainActor (Star?) -> Void)?
+    /// What the gestures move.
+    weak var controller: (any CameraController)?
 
-    /// Distance to orbit a star from after double-clicking it, in light years.
-    var flyToDistance: Float = 20
+    /// A single click, at a point in the view (top-left origin) with a hit tolerance in points.
+    var onClick: (@MainActor (CGPoint, Float) -> Void)?
+
+    /// A double-click, at a point in the view (top-left origin) with a hit tolerance in points.
+    /// The first click of the pair has already run `onClick`.
+    var onDoubleClick: (@MainActor (CGPoint, Float) -> Void)?
+
+    /// How close to an item a click counts as a hit, in points.
+    var clickTolerance: Float = 20
 
     /// Total pointer travel since the press, to tell a click from a drag.
     private var travel: Float = 0
@@ -42,10 +81,6 @@ final class InteractiveStarView: MTKView {
     private let pauseThreshold: TimeInterval = 0.05
     /// Time charged to the first move after a pause, when the real interval isn't meaningful.
     private let nominalEventInterval: TimeInterval = 1.0 / 60
-
-    private var renderer: StarRenderer? {
-        delegate as? StarRenderer
-    }
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -67,7 +102,7 @@ final class InteractiveStarView: MTKView {
             rotationSamples.removeAll()
             pan(by: delta)
         } else {
-            renderer?.camera.rotate(by: delta * radiansPerPoint)
+            controller?.rotate(by: delta * radiansPerPoint)
             // A long gap means the pointer paused (or this is the first move after the press):
             // start measuring afresh so the pause doesn't count toward the release speed.
             let paused = interval > pauseThreshold
@@ -89,7 +124,7 @@ final class InteractiveStarView: MTKView {
         guard let last = rotationSamples.last, event.timestamp - last.time < 0.05 else { return }
         let distance = rotationSamples.reduce(SIMD2<Float>.zero) { $0 + $1.delta }
         let duration = max(rotationSamples.reduce(0.0) { $0 + $1.interval }, 1.0 / 240)
-        renderer?.fling(angularVelocity: distance / Float(duration) * radiansPerPoint)
+        controller?.fling(angularVelocity: distance / Float(duration) * radiansPerPoint)
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -101,35 +136,24 @@ final class InteractiveStarView: MTKView {
     }
 
     private func beginDrag(at event: NSEvent) {
-        renderer?.stopMotion()
+        controller?.stopMotion()
         rotationSamples.removeAll()
         lastEventTime = event.timestamp
         travel = 0
     }
 
-    /// Single click selects (or deselects on empty space); double click flies to a star or resets.
+    /// A single click runs `onClick`; a double click runs `onDoubleClick` (the first click of the pair already ran `onClick`).
     private func click(count: Int, at event: NSEvent) {
-        let hit = star(at: event)
+        let location = convert(event.locationInWindow, from: nil)
+        let topLeft = CGPoint(x: location.x, y: isFlipped ? location.y : bounds.height - location.y)
         switch count {
         case 1:
-            onSelect?(hit)
+            onClick?(topLeft, clickTolerance)
         case 2:
-            guard let renderer else { return }
-            if let hit {
-                renderer.fly(to: hit.position, distance: min(renderer.camera.distance, flyToDistance))
-            } else {
-                renderer.camera.reset()
-            }
+            onDoubleClick?(topLeft, clickTolerance)
         default:
             break
         }
-    }
-
-    /// The star under the pointer, if any.
-    private func star(at event: NSEvent) -> Star? {
-        let location = convert(event.locationInWindow, from: nil)
-        let topLeft = CGPoint(x: location.x, y: isFlipped ? location.y : bounds.height - location.y)
-        return renderer?.star(at: topLeft, viewSize: bounds.size)
     }
 
     override func rightMouseDragged(with event: NSEvent) {
@@ -142,7 +166,7 @@ final class InteractiveStarView: MTKView {
 
     private func pan(by points: SIMD2<Float>) {
         let shortSide = Float(min(bounds.width, bounds.height))
-        renderer?.camera.pan(byPoints: points, viewportShortSide: shortSide)
+        controller?.pan(byPoints: points, viewportShortSide: shortSide)
     }
 
     // MARK: Zoom and roll
@@ -150,17 +174,17 @@ final class InteractiveStarView: MTKView {
     override func scrollWheel(with event: NSEvent) {
         // Trackpads report fine-grained point deltas; mouse wheels report coarse lines.
         let perUnit: Float = event.hasPreciseScrollingDeltas ? 0.005 : 0.08
-        renderer?.cancelFlight()
-        renderer?.camera.zoom(by: exp(-Float(event.scrollingDeltaY) * perUnit))
+        controller?.cancelFlight()
+        controller?.zoom(by: exp(-Float(event.scrollingDeltaY) * perUnit))
     }
 
     override func magnify(with event: NSEvent) {
-        renderer?.cancelFlight()
-        renderer?.camera.zoom(by: 1 / max(1 + Float(event.magnification), 0.1))
+        controller?.cancelFlight()
+        controller?.zoom(by: 1 / max(1 + Float(event.magnification), 0.1))
     }
 
     override func rotate(with event: NSEvent) {
-        renderer?.camera.roll(by: Float(event.rotation) * .pi / 180)
+        controller?.roll(by: Float(event.rotation) * .pi / 180)
     }
 }
 #else
@@ -174,25 +198,24 @@ import UIKit
 /// | Zoom | Pinch, or scroll with a trackpad or mouse |
 /// | Pan | Two-finger drag |
 /// | Roll | Two-finger rotate |
-/// | Select | Tap a star (tap empty space to deselect) |
-/// | Fly to a star | Double-tap it |
-/// | Reset | Double-tap empty space |
-final class InteractiveStarView: MTKView, UIGestureRecognizerDelegate {
+/// | Tap | `onClick`: the star view selects a star, the Planetary System view an item |
+/// | Double-tap | `onDoubleClick`: flies to what is under the finger, or resets on empty space |
+final class InteractiveMetalView: MTKView, UIGestureRecognizerDelegate {
     /// Rotation per point dragged, in radians.
     var radiansPerPoint: Float = 0.006
 
-    /// Called when a tap selects a star, or with nil when a tap lands on empty space.
-    var onSelect: (@MainActor (Star?) -> Void)?
+    /// What the gestures move.
+    weak var controller: (any CameraController)?
 
-    /// Distance to orbit a star from after double-tapping it, in light years.
-    var flyToDistance: Float = 20
+    /// A single tap, at a point in the view (top-left origin) with a hit tolerance in points.
+    var onClick: (@MainActor (CGPoint, Float) -> Void)?
 
-    /// Fingers get a little more room than a pointer when picking a star.
+    /// A double tap, at a point in the view (top-left origin) with a hit tolerance in points.
+    /// `onClick` runs first, as the first click of a double-click does on the Mac.
+    var onDoubleClick: (@MainActor (CGPoint, Float) -> Void)?
+
+    /// Fingers get a little more room than a pointer (20 points on the Mac) when picking.
     var touchTolerance: Float = 28
-
-    private var renderer: StarRenderer? {
-        delegate as? StarRenderer
-    }
 
     /// True once a second finger joins the touch sequence (a pinch, pan or roll begins), until the
     /// next sequence starts. One-finger rotation stops, without flinging, while it's set.
@@ -256,7 +279,7 @@ final class InteractiveStarView: MTKView, UIGestureRecognizerDelegate {
 
     /// Any new touch stops a fling or a flight, so a finger on the screen holds the view still.
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        renderer?.stopMotion()
+        controller?.stopMotion()
         // Recognizers may hold back later touches from the view, so this reliably sees only the
         // first finger of a sequence; the multi-touch recognizers set the flag when they begin.
         isMultiTouch = (event?.touches(for: self)?.count ?? touches.count) > 1
@@ -279,75 +302,66 @@ final class InteractiveStarView: MTKView, UIGestureRecognizerDelegate {
     }
 
     @objc private func rotate(_ recognizer: UIPanGestureRecognizer) {
-        guard let renderer, [.began, .changed, .ended].contains(recognizer.state) else { return }
+        guard let controller, [.began, .changed, .ended].contains(recognizer.state) else { return }
         let delta = takeTranslation(recognizer)
         guard !isMultiTouch else { return }
-        renderer.camera.rotate(by: delta * radiansPerPoint)
+        controller.rotate(by: delta * radiansPerPoint)
         if recognizer.state == .ended {
             // UIKit measures release speed itself, in points per second, independent of frame rate.
             let velocity = recognizer.velocity(in: self)
-            renderer.fling(angularVelocity: SIMD2(Float(velocity.x), Float(velocity.y)) * radiansPerPoint)
+            controller.fling(angularVelocity: SIMD2(Float(velocity.x), Float(velocity.y)) * radiansPerPoint)
         }
     }
 
     @objc private func pan(_ recognizer: UIPanGestureRecognizer) {
         noteMultiTouch(recognizer)
-        guard let renderer, [.began, .changed, .ended].contains(recognizer.state) else { return }
+        guard let controller, [.began, .changed, .ended].contains(recognizer.state) else { return }
         let delta = takeTranslation(recognizer)
-        renderer.cancelFlight()
-        renderer.camera.pan(byPoints: delta, viewportShortSide: shortSide)
+        controller.cancelFlight()
+        controller.pan(byPoints: delta, viewportShortSide: shortSide)
     }
 
     @objc private func pinch(_ recognizer: UIPinchGestureRecognizer) {
         noteMultiTouch(recognizer)
-        guard let renderer, [.began, .changed, .ended].contains(recognizer.state), recognizer.scale > 0 else { return }
-        renderer.cancelFlight()
-        renderer.camera.zoom(by: 1 / Float(recognizer.scale))
+        guard let controller, [.began, .changed, .ended].contains(recognizer.state), recognizer.scale > 0 else { return }
+        controller.cancelFlight()
+        controller.zoom(by: 1 / Float(recognizer.scale))
         recognizer.scale = 1
     }
 
     @objc private func roll(_ recognizer: UIRotationGestureRecognizer) {
         noteMultiTouch(recognizer)
-        guard let renderer, [.began, .changed, .ended].contains(recognizer.state) else { return }
+        guard let controller, [.began, .changed, .ended].contains(recognizer.state) else { return }
         // UIKit's rotation is clockwise-positive; the camera's roll is counterclockwise-positive.
-        renderer.camera.roll(by: -Float(recognizer.rotation))
+        controller.roll(by: -Float(recognizer.rotation))
         recognizer.rotation = 0
     }
 
     @objc private func scroll(_ recognizer: UIPanGestureRecognizer) {
-        guard let renderer, [.began, .changed, .ended].contains(recognizer.state) else { return }
+        guard let controller, [.began, .changed, .ended].contains(recognizer.state) else { return }
         // Pointer scrolling sends no touches, so stop a fling here rather than in touchesBegan.
         if recognizer.state == .began {
-            renderer.stopMotion()
+            controller.stopMotion()
         }
         let delta = takeTranslation(recognizer)
-        renderer.camera.zoom(by: exp(-delta.y * 0.005))
+        controller.zoom(by: exp(-delta.y * 0.005))
     }
 
     @objc private func tap(_ recognizer: UITapGestureRecognizer) {
-        onSelect?(star(at: recognizer.location(in: self)))
+        onClick?(recognizer.location(in: self), touchTolerance)
     }
 
     @objc private func doubleTap(_ recognizer: UITapGestureRecognizer) {
-        guard let renderer else { return }
-        let hit = star(at: recognizer.location(in: self))
-        // Select (or, on empty space, deselect) too, as a double-click does on the Mac, where the
-        // first click selects. The single-tap recognizer waits for this one to fail, so it won't.
-        onSelect?(hit)
-        if let hit {
-            renderer.fly(to: hit.position, distance: min(renderer.camera.distance, flyToDistance))
-        } else {
-            renderer.camera.reset()
-        }
+        let location = recognizer.location(in: self)
+        // Click first (to select, or on empty space to deselect), as a double-click does on the Mac,
+        // where the first click already ran it. The single-tap recognizer waits for this one to
+        // fail, so it won't run it.
+        onClick?(location, touchTolerance)
+        onDoubleClick?(location, touchTolerance)
     }
 
     private var shortSide: Float {
         Float(min(bounds.width, bounds.height))
-    }
-
-    /// The star under a point in the view (top-left origin, as UIKit uses).
-    private func star(at point: CGPoint) -> Star? {
-        renderer?.star(at: point, viewSize: bounds.size, tolerance: touchTolerance)
     }
 }
 #endif

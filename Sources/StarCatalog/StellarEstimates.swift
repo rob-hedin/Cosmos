@@ -7,6 +7,15 @@ extension Astrophysics {
     /// Days in a Julian year.
     public static let daysPerYear = 365.25
 
+    /// Kilometres in one astronomical unit (IAU 2012).
+    public static let kilometersPerAU = 149_597_870.7
+
+    /// Kilometres in one nominal solar radius (IAU 2015).
+    public static let kilometersPerSolarRadius = 695_700.0
+
+    /// Earth's mean radius in km; the reference size for drawn Bodies.
+    public static let earthRadiusKilometers = 6_371.0
+
     // MARK: Mass and radius from spectral type
 
     /// Main-sequence mass estimate in solar masses from a type such as "G2V", "M4.5V", "sdM4" or "k-m".

@@ -332,31 +332,55 @@ struct MetalStarView {
     let renderer: StarRenderer
     let onSelect: @MainActor (Star?) -> Void
 
+    /// Distance to orbit a star from after double-clicking it, in light years.
+    private static let flyToDistance: Float = 20
+
     @MainActor
-    private func makeView() -> InteractiveStarView {
-        let view = InteractiveStarView()
-        view.onSelect = onSelect
+    private func makeView() -> InteractiveMetalView {
+        let view = InteractiveMetalView()
+        configure(view)
         renderer.attach(to: view)
         return view
     }
 
     @MainActor
-    private func update(_ view: InteractiveStarView) {
-        view.onSelect = onSelect
+    private func update(_ view: InteractiveMetalView) {
+        configure(view)
         if view.delegate !== renderer {
             renderer.attach(to: view)
+        }
+    }
+
+    /// A click selects the star under the pointer, or deselects on empty space. A double-click
+    /// flies to the star, or resets the view on empty space.
+    @MainActor
+    private func configure(_ view: InteractiveMetalView) {
+        let renderer = renderer
+        let onSelect = onSelect
+        view.controller = renderer
+        view.onClick = { [weak view] point, tolerance in
+            guard let view else { return }
+            onSelect(renderer.star(at: point, viewSize: view.bounds.size, tolerance: tolerance))
+        }
+        view.onDoubleClick = { [weak view] point, tolerance in
+            guard let view else { return }
+            if let star = renderer.star(at: point, viewSize: view.bounds.size, tolerance: tolerance) {
+                renderer.fly(to: star.position, distance: min(renderer.camera.distance, Self.flyToDistance))
+            } else {
+                renderer.camera.reset()
+            }
         }
     }
 }
 
 #if os(macOS)
 extension MetalStarView: NSViewRepresentable {
-    func makeNSView(context: Context) -> InteractiveStarView { makeView() }
-    func updateNSView(_ view: InteractiveStarView, context: Context) { update(view) }
+    func makeNSView(context: Context) -> InteractiveMetalView { makeView() }
+    func updateNSView(_ view: InteractiveMetalView, context: Context) { update(view) }
 }
 #else
 extension MetalStarView: UIViewRepresentable {
-    func makeUIView(context: Context) -> InteractiveStarView { makeView() }
-    func updateUIView(_ view: InteractiveStarView, context: Context) { update(view) }
+    func makeUIView(context: Context) -> InteractiveMetalView { makeView() }
+    func updateUIView(_ view: InteractiveMetalView, context: Context) { update(view) }
 }
 #endif

@@ -69,16 +69,27 @@ public struct StarFieldBrowser: View {
     private var isEditingRoute: Bool { showsToolbar && showsRouteBuilder && isBuildingRoute }
 
     private var routeEditing: RouteEditing {
-        RouteEditing(
-            stops: builtRoute,
-            hint: isEditingRoute && (builtRoute ?? []).isEmpty ? Self.addStopsHint : nil,
-            onStarClick: isEditingRoute ? { star in
-                selection = star?.id
-                if let star { addStop(StarLocation(name: star.name, position: star.position, starID: star.id)) }
-            } : nil,
-            onUndo: isEditingRoute ? { _ = builtRoute?.popLast() } : nil,
-            onClear: { builtRoute = [] }
-        )
+        var editing = RouteEditing(stops: builtRoute)
+        editing.onClear = clearBuiltRoute
+        if isEditingRoute {
+            if (builtRoute ?? []).isEmpty { editing.hint = Self.addStopsHint }
+            editing.onStarClick = addClickedStar
+            editing.onUndo = undoStop
+        }
+        return editing
+    }
+
+    private func addClickedStar(_ star: Star?) {
+        selection = star?.id
+        if let star { addStop(StarLocation(name: star.name, position: star.position, starID: star.id)) }
+    }
+
+    private func undoStop() {
+        _ = builtRoute?.popLast()
+    }
+
+    private func clearBuiltRoute() {
+        builtRoute = []
     }
 
     #if os(macOS)

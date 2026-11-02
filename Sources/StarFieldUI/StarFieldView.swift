@@ -285,11 +285,11 @@ struct RouteEditing {
     /// The stops, replacing the route passed in. Nil leaves that route showing.
     var stops: [StarLocation]?
     /// Shown in the route tile, such as "Click stars to add stops".
-    var hint: String?
+    var hint: String? = nil
     /// Replaces selecting on click.
-    var onStarClick: (@MainActor (Star?) -> Void)?
-    var onUndo: (@MainActor () -> Void)?
-    var onClear: (@MainActor () -> Void)?
+    var onStarClick: (@MainActor (Star?) -> Void)? = nil
+    var onUndo: (@MainActor () -> Void)? = nil
+    var onClear: (@MainActor () -> Void)? = nil
 }
 
 extension StarFieldView {

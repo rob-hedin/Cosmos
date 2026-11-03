@@ -146,10 +146,12 @@ public struct StarFieldBrowser: View {
 
     private var toolbar: some View {
         VStack(alignment: .trailing, spacing: 8) {
-            // Where the full controls don't fit, as on a phone, the toggles show only their icons.
+            // Where the full controls don't fit, as on a phone, they step down to fewer, smaller ones.
             ViewThatFits(in: .horizontal) {
-                controls(compact: false)
-                controls(compact: true)
+                controls(layout: .full)
+                controls(layout: .compact)
+                controls(layout: .icons)
+                controls(layout: .minimal)
             }
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { controlsFrame = $0 }
             if isSearching, let catalog {
@@ -161,7 +163,21 @@ public struct StarFieldBrowser: View {
         .padding()
     }
 
-    private func controls(compact: Bool) -> some View {
+    /// How much room the toolbar has, from widest to narrowest. `ViewThatFits` tries them in this order,
+    /// so each one only shows where the wider ones don't fit. `full` and `compact` are the layouts the
+    /// toolbar has always had; `icons` and `minimal` are only used where neither of those fits.
+    private enum ToolbarLayout {
+        /// Every control with its title, and the segmented Luminosity/Radius picker.
+        case full
+        /// The toggles as icons, and the segmented Luminosity/Radius picker.
+        case compact
+        /// Every control as an icon. The size picker becomes an icon menu.
+        case icons
+        /// Search, Route and Filters as icons, plus one "View" menu holding Names, Rings, Constellations and Size.
+        case minimal
+    }
+
+    private func controls(layout: ToolbarLayout) -> some View {
         HStack(spacing: 10) {
             Toggle("Search", systemImage: "magnifyingglass", isOn: $isSearching)
                 .toggleStyle(.button)
@@ -191,25 +207,77 @@ public struct StarFieldBrowser: View {
                         .presentationCompactAdaptation(.popover)
                 }
             }
-            if compact {
-                toggles.labelStyle(.iconOnly)
-            } else {
+            switch layout {
+            case .full:
                 toggles
+                segmentedSizePicker
+            case .compact:
+                toggles.labelStyle(.iconOnly)
+                segmentedSizePicker
+            case .icons:
+                toggles.labelStyle(.iconOnly)
+                sizeMenu
+            case .minimal:
+                viewMenu
             }
-            Picker("Size", selection: $sizeMode) {
-                Text("Luminosity").tag(StarSizeMode.luminosity)
-                Text("Radius").tag(StarSizeMode.estimatedRadius)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            .help("Size stars by luminosity, or by estimated physical radius")
         }
         .padding(8)
         .background(.regularMaterial, in: .capsule)
     }
 
+    private static let sizeHelp = "Size stars by luminosity, or by estimated physical radius"
+
+    /// The bare Luminosity/Radius choice, for the segmented picker and the menus to style.
+    private var sizePicker: some View {
+        Picker("Size", selection: $sizeMode) {
+            Text("Luminosity").tag(StarSizeMode.luminosity)
+            Text("Radius").tag(StarSizeMode.estimatedRadius)
+        }
+    }
+
+    private var segmentedSizePicker: some View {
+        sizePicker
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .help(Self.sizeHelp)
+    }
+
+    /// The size choice as one icon, for when the segmented picker doesn't fit.
+    private var sizeMenu: some View {
+        Menu {
+            sizePicker
+        } label: {
+            Label(
+                sizeMode == .luminosity ? "Size: Luminosity" : "Size: Radius",
+                systemImage: sizeMode == .luminosity ? "sun.max" : "circle.circle"
+            )
+            .labelStyle(.iconOnly)
+        }
+        .fixedSize()
+        .help(Self.sizeHelp)
+    }
+
+    /// Everything but Search, Route and Filters behind one icon, for the narrowest layout.
+    private var viewMenu: some View {
+        Menu {
+            toggleItems
+            Divider()
+            sizePicker
+        } label: {
+            Label("View", systemImage: "eye")
+                .labelStyle(.iconOnly)
+        }
+        .fixedSize()
+        .help("Names, rings, constellations and star size")
+    }
+
     private var toggles: some View {
+        toggleItems.toggleStyle(.button)
+    }
+
+    /// The Names, Rings and Constellations switches, in whatever style the surrounding view gives them.
+    private var toggleItems: some View {
         Group {
             Toggle("Names", systemImage: "textformat", isOn: $showsLabels)
                 .help("Star names")
@@ -220,7 +288,6 @@ public struct StarFieldBrowser: View {
                     .help("Constellation figures as seen from Earth, on a sphere 200 ly around the Sun")
             }
         }
-        .toggleStyle(.button)
     }
 
     /// Selects the star and glides to it. Picking the Sun selects it as `Star.sunID` and flies home.

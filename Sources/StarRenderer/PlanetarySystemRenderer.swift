@@ -144,7 +144,7 @@ public final class PlanetarySystemRenderer: NSObject {
         pipelines = try Pipelines(device: device)
         state = PlanetarySceneState(system: system, scale: scale, clock: clock)
 
-        bodyColors = system.bodies.map { Self.linear(fromSRGB: $0.displayColor) }
+        bodyColors = system.bodies.map { PlanetaryPalette.linear(fromSRGB: $0.displayColor) }
         starColor = Astrophysics.color(temperature: system.centralStar.temperature)
         var indices: [PlanetarySystemItem: Int] = [.centralStar: 0]
         for (index, body) in system.bodies.enumerated() {
@@ -326,13 +326,6 @@ public final class PlanetarySystemRenderer: NSObject {
         }
     }
 
-    private static func linear(fromSRGB color: SIMD3<Float>) -> SIMD3<Float> {
-        func channel(_ c: Float) -> Float {
-            c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
-        }
-        return SIMD3(channel(color.x), channel(color.y), channel(color.z))
-    }
-
     // MARK: Drawing
 
     private func render(in view: MTKView) {
@@ -411,7 +404,7 @@ public final class PlanetarySystemRenderer: NSObject {
             return BeltInstance(
                 centerOuter: SIMD4(snapshot.entries[belt.parentEntryIndex].position, Float(belt.radii.upperBound)),
                 innerFade: SIMD4(Float(belt.radii.lowerBound), Float(width * 0.08), 0, 0),
-                color: SIMD4(0.55, 0.5, 0.42, 0.12)
+                color: PlanetaryPalette.beltColor
             )
         }
         encoder.setRenderPipelineState(pipelines.belt)
@@ -434,7 +427,7 @@ public final class PlanetarySystemRenderer: NSObject {
             let isSelected = selection == .body(body.name)
             var offset = SIMD4(snapshot.entries[parentEntryIndices[index]].position, 0)
             let base = bodyColors[index]
-            var color = SIMD4(isSelected ? simd_min(base + SIMD3(repeating: 0.2), SIMD3(repeating: 1)) : base * 0.35, 1)
+            var color = SIMD4(isSelected ? simd_min(base + SIMD3(repeating: 0.2), SIMD3(repeating: 1)) : base * PlanetaryPalette.unselectedOrbitDimming, 1)
             encoder.setVertexBytes(&offset, length: MemoryLayout<SIMD4<Float>>.stride, index: 2)
             encoder.setFragmentBytes(&color, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
             encoder.drawPrimitives(type: .lineStrip, vertexStart: index * perOrbit, vertexCount: perOrbit)

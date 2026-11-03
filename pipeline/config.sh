@@ -6,8 +6,8 @@
 CODEX_PLAN_REVIEW_MODEL="gpt-6-astra"     # step 3: plan review
 CODEX_PLAN_REVIEW_EFFORT="medium"
 
-CODEX_TESTS_MODEL="gpt-6-luna"            # step 5: test generation
-CODEX_TESTS_EFFORT="xhigh"
+CODEX_TESTS_MODEL="gpt-6.1-sol"            # step 5: test generation
+CODEX_TESTS_EFFORT="medium"
 
 CODEX_CODE_REVIEW_MODEL="gpt-6.1-sol"     # step 7: code review
 CODEX_CODE_REVIEW_EFFORT="medium"

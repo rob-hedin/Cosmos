@@ -1,8 +1,8 @@
 ---
 name: implementer
 description: Implements the approved plan until the frozen tests pass, and applies code-review fixes. Use only from the feature pipeline.
-model: claude-sonnet-5-5
-effort: xhigh
+model: claude-opus-5-5
+effort: medium
 tools: Read, Grep, Glob, Bash, Write, Edit
 ---
 
